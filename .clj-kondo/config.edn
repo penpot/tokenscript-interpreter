@@ -1,0 +1,19 @@
+;; Penpot's linter settings, without the ones for penpot's own macros.
+{:output {:linter-name true}
+
+ :linters
+ {:unsorted-required-namespaces {:level :warning}
+  :single-key-in {:level :warning}
+  :used-underscored-binding {:level :warning}
+  :unused-binding {:exclude-destructured-as true
+                   :exclude-destructured-keys-in-fn-args false}
+  :redundant-primitive-coercion {:level :off}
+  :unused-excluded-var {:level :off}
+  :unresolved-excluded-var {:level :off}
+  :missing-protocol-method {:level :off}
+  :unused-value {:level :off}
+  :non-arg-vec-return-type-hint {:level :off}
+  :redundant-do {:level :off}
+  :redundant-nested-call {:level :off}
+  :redundant-str-call {:level :off}
+  :type-mismatch {:level :off}}}

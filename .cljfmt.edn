@@ -1,0 +1,7 @@
+{:sort-ns-references? true
+ :remove-multiple-non-indenting-spaces? false
+ :remove-surrounding-whitespace? true
+ :remove-consecutive-blank-lines? false
+ :indent-line-comments? true
+ :parallel? true
+ :align-form-columns? false}

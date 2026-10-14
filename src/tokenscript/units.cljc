@@ -1,0 +1,121 @@
+;; This Source Code Form is subject to the terms of the Mozilla Public
+;; License, v. 2.0. If a copy of the MPL was not distributed with this
+;; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+;;
+;; Copyright (c) KALEIDOS SUBSIDIARY SL
+
+(ns tokenscript.units
+  "Unit registry.
+
+  Units are schemas (`:type \"absolute\"` or `\"relative\"`) with a
+  keyword (`px`, `rem`, `%`) and conversion scripts. Relative units carry
+  a `to_absolute` script evaluated against another operand. Script
+  execution lives in the interpreter. See Units in
+  docs/schemas.md.
+
+  `UnitRegistry` has the common registry fields (see
+  `tokenscript.registry`) plus `keywords`
+  (`{name-key uri}`)."
+  (:require
+   [clojure.walk :as walk]
+   [tokenscript.errors :as err]
+   [tokenscript.parser :as parser]
+   [tokenscript.registry :as reg]
+   [tokenscript.schema-uri :as suri]
+   [tokenscript.util :as u]))
+
+(def pixel-unit-uri (suri/build-uri {:category "core" :name "px-unit" :version {:major 0}}))
+(def seconds-unit-uri (suri/build-uri {:category "core" :name "seconds-unit" :version {:major 0}}))
+(def ms-unit-uri (suri/build-uri {:category "core" :name "ms-unit" :version {:major 0}}))
+(def rem-unit-uri (suri/build-uri {:category "core" :name "rem-unit" :version {:major 0}}))
+(def ch-unit-uri (suri/build-uri {:category "core" :name "ch-unit" :version {:major 0}}))
+(def percent-unit-uri (suri/build-uri {:category "core" :name "percent-unit" :version {:major 0}}))
+
+(def default-specs
+  [[seconds-unit-uri
+    {:name "seconds" :type "absolute" :keyword "s"
+     :description "A unit of time equal to one second."
+     :conversions []}]
+   [ms-unit-uri
+    {:name "milliseconds" :type "absolute" :keyword "ms"
+     :description "A unit of time equal to one millisecond."
+     :conversions [{:source "$self" :target seconds-unit-uri
+                    :script {:script "return ({input} / 1000)s;"}
+                    :description "Convert milliseconds to seconds."}
+                   {:source seconds-unit-uri :target "$self"
+                    :script {:script "return ({input} * 1000)ms;"}
+                    :description "Convert seconds to milliseconds."}]}]
+   [pixel-unit-uri
+    {:name "pixel" :type "absolute" :keyword "px"
+     :description "A pixel unit, typically used in digital displays."
+     :conversions []}]
+   [rem-unit-uri
+    {:name "root em" :type "absolute" :keyword "rem"
+     :description "A root em unit, relative to the root font size."
+     :conversions [{:source "$self" :target pixel-unit-uri
+                    :script {:script "return ({input} * 16)px;"}
+                    :description "Convert rem to pixel based on a root font size of 16px."}
+                   {:source pixel-unit-uri :target "$self"
+                    :script {:script "return ({input} / 16)rem;"}
+                    :description "Convert pixel to rem based on a root font size of 16px."}]}]
+   [percent-unit-uri
+    {:name "percent" :type "relative" :keyword "%"
+     :description "A percentage unit, representing a fraction of 100."
+     :to_absolute {:script "return {other_value} * ({relative_value} / 100);"}
+     :conversions []}]
+   [ch-unit-uri
+    {:name "character" :type "absolute" :keyword "ch"
+     :description "Relative to the width of the '0' character in the element's font."
+     :conversions []}]])
+
+(def valid-unit-types ["absolute" "relative"])
+
+(defn- normalize-spec
+  [uri spec]
+  (let [spec (walk/keywordize-keys spec)]
+    (when-not (and (map? spec)
+                   (string? (:name spec))
+                   (string? (:keyword spec))
+                   (contains? (set valid-unit-types) (:type spec)))
+      (err/raise :config/invalid-specification
+                 {:data {:kind "unit" :uri uri
+                         :error "expected a map with :name, :keyword and :type absolute|relative"}}))
+    (cond-> (update spec :conversions #(vec (or % [])))
+      (:to_absolute spec) (assoc-in [:to_absolute :ast] (:ast (parser/parse (get-in spec [:to_absolute :script])))))))
+
+(defn- register-spec
+  [registry uri spec]
+  (let [uri (suri/normalize uri)
+        spec (normalize-spec uri spec)]
+    (-> registry
+        (reg/add-spec uri spec)
+        (assoc-in [:keywords (u/name-key (:keyword spec))] uri)
+        (reg/add-conversions uri (:conversions spec)))))
+
+(defrecord UnitRegistry [specs spec-types conversions keywords cache]
+  reg/ISchemaRegistry
+  (register [this uri spec]
+    (register-spec this uri spec)))
+
+(defn empty-registry
+  []
+  (->UnitRegistry {} {} {} {} (reg/new-cache)))
+
+(defn default-registry
+  "Registry with the built in units (`px`, `rem`, `%`, `s`, `ms`, `ch`)."
+  []
+  (reduce (fn [registry [uri spec]] (reg/register registry uri spec)) (empty-registry) default-specs))
+
+(defn uri-by-keyword
+  [registry keyword]
+  (u/get-name (:keywords registry) keyword))
+
+(defn spec-by-keyword
+  [registry keyword]
+  (when-let [uri (uri-by-keyword registry keyword)]
+    (reg/spec registry uri)))
+
+(defn relative?
+  "Whether the unit keyword is registered as a relative unit."
+  [registry keyword]
+  (= "relative" (:type (spec-by-keyword registry keyword))))
