@@ -1,0 +1,35 @@
+name: "Commit Message Check"
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - ready_for_review
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-commit-message:
+    if: ${{ !github.event.pull_request.draft }}
+    name: Check Commit Message
+    runs-on: ubuntu-latest
+
+    steps:
+      # The pattern of penpot's commit checker, see CONTRIBUTING.md
+      - name: Check Commit Type
+        uses: gsactions/commit-message-checker@16fa2d5de096ae0d35626443bcd24f1e756cafee # v2.0.0
+        with:
+          pattern: '^(((:(lipstick|globe_with_meridians|wrench|books|arrow_up|arrow_down|zap|ambulance|construction|boom|fire|whale|bug|sparkles|paperclip|tada|recycle|rewind|construction_worker):)\s[A-Z].*[^.])|(Merge|Revert|Reapply).+[^.])$'
+          flags: 'gm'
+          error: 'Commit should match CONTRIBUTING.md guideline'
+          checkAllCommitMessages: 'true'
+          accessToken: ${{ secrets.GITHUB_TOKEN }}
