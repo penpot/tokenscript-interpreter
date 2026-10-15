@@ -12,6 +12,7 @@
   files it references (`\"script\": \"./initializer.tokenscript\"`):
 
     types/<name>/       color spaces     -> /api/v1/core/<name>/0/
+    tokens/<name>/      token types      -> /api/v1/core/<name>/0/
     functions/<name>/   functions        -> /api/v1/function/<name>/0/
     constants/<name>/   inline constants -> /api/v1/constants/<name>/0/
 
@@ -40,6 +41,7 @@
 #?(:clj
    (def ^:private categories
      [["types" "core"]
+      ["tokens" "core"]
       ["functions" "function"]
       ["constants" "constants"]]))
 
@@ -114,6 +116,8 @@
                      (update :initializers inline)
                      (update :conversions inline))
          "function" (update schema :script (partial inline-script dir))
+         "token" (cond-> schema
+                   (:validation schema) (update :validation (partial inline-script dir)))
          schema))))
 
 #?(:clj
@@ -141,6 +145,7 @@
      (case (:type schema)
        "color" (map #(get-in % [:script :script]) (concat (:initializers schema) (:conversions schema)))
        "function" [(get-in schema [:script :script])]
+       "token" (keep :script [(:validation schema)])
        nil)))
 
 #?(:clj
@@ -150,7 +155,10 @@
       (->> (:conversions schema)
            (mapcat (juxt :source :target))
            (remove #{"$self"}))
-      (:requirements schema))))
+      (:requirements schema)
+      ;; Token types name the types of their fields
+      (->> (tree-seq coll? seq (:schema schema))
+           (keep #(when (and (map? %) (= "token" (:type %))) (:url %)))))))
 
 #?(:clj
    (defn check-schemas!

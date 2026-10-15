@@ -1,0 +1,5 @@
+// A rotation angle. A number, with or without a unit.
+if (is_number({input}) || is_number_with_unit({input})) [
+  return true;
+];
+return "INVALID_ROTATION_TYPE";

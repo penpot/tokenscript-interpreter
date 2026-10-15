@@ -1,0 +1,8 @@
+{
+  "name": "fontSizes",
+  "type": "token",
+  "description": "A font size.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

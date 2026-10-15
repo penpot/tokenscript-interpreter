@@ -1,0 +1,8 @@
+{
+  "name": "fontFamilies",
+  "type": "token",
+  "description": "A font family name, or a list of names.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

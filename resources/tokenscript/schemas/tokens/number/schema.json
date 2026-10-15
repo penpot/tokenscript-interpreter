@@ -1,0 +1,8 @@
+{
+  "name": "number",
+  "type": "token",
+  "description": "A number without a unit.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

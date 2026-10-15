@@ -1,0 +1,8 @@
+{
+  "name": "letterSpacing",
+  "type": "token",
+  "description": "A letter spacing.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

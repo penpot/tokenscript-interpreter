@@ -1,0 +1,8 @@
+{
+  "name": "lineHeights",
+  "type": "token",
+  "description": "A line height, as a ratio or with a unit.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

@@ -1,0 +1,16 @@
+// An opacity: a number from 0 to 1, or a percentage from 0% to 100%.
+if (is_number({input})) [
+  if ({input} < 0 || {input} > 1) [
+    return "INVALID_OPACITY_RANGE";
+  ];
+  return true;
+];
+if (is_number_with_unit({input})) [
+  if (type({input}) == "%") [
+    if ({input}.value < 0 || {input}.value > 100) [
+      return "INVALID_OPACITY_RANGE";
+    ];
+    return true;
+  ];
+];
+return "INVALID_OPACITY_TYPE";

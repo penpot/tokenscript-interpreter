@@ -1,0 +1,8 @@
+{
+  "name": "textDecoration",
+  "type": "token",
+  "description": "A text decoration keyword. The keywords allowed depend on the consumer.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

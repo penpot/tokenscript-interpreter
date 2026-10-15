@@ -659,9 +659,11 @@
 
 (defn- ordered-map
   [m]
-  (if (nil? m)
-    lkm/empty-linked-map
-    (into lkm/empty-linked-map m)))
+  (cond
+    (nil? m) lkm/empty-linked-map
+    ;; Already ordered, and immutable: no copy
+    (instance? (type lkm/empty-linked-map) m) m
+    :else (into lkm/empty-linked-map m)))
 
 (defrecord DictionarySymbol [value]
   ISymbol

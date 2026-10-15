@@ -47,7 +47,10 @@
   script string or a map with a `:script` key."
   [registry token-type validation]
   (let [script (if (string? validation) validation (:script validation))]
-    (assoc-in registry [:validation (u/name-key token-type)] (parse-validation script))))
+    (-> registry
+        (assoc-in [:validation (u/name-key token-type)] (parse-validation script))
+        ;; Drops the cached validation results
+        (assoc :cache (reg/new-cache)))))
 
 (defn- register-spec
   [registry uri spec]

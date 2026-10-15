@@ -1,0 +1,8 @@
+{
+  "name": "sizing",
+  "type": "token",
+  "description": "A width or height.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

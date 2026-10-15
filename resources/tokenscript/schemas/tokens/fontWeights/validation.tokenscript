@@ -1,0 +1,12 @@
+// A font weight: a number from 1 to 1000, a name (`bold`), or words
+// (`700 italic`, an implicit list).
+if (is_number({input})) [
+  if ({input} < 1 || {input} > 1000) [
+    return "INVALID_FONT_WEIGHT_RANGE";
+  ];
+  return true;
+];
+if (is_string({input}) || is_list({input})) [
+  return true;
+];
+return "INVALID_FONT_WEIGHT_TYPE";

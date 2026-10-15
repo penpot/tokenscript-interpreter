@@ -1,0 +1,8 @@
+{
+  "name": "fontWeights",
+  "type": "token",
+  "description": "A font weight: a number from 1 to 1000, or a name like bold or 700 italic.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

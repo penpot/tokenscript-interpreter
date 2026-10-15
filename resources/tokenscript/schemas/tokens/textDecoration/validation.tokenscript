@@ -1,0 +1,6 @@
+// A text decoration keyword. Which keywords are allowed is up to the
+// consumer.
+if (is_string({input})) [
+  return true;
+];
+return "INVALID_TEXT_DECORATION_TYPE";

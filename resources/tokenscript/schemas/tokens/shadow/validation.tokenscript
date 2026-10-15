@@ -1,0 +1,11 @@
+// A list of shadows, each a dictionary of fields. The fields are
+// validated by their own token types, see the schema.
+if (is_list({input})) [
+  for item in {input} [
+    if (!is_dictionary(item)) [
+      return "INVALID_SHADOW_TYPE";
+    ];
+  ];
+  return true;
+];
+return "INVALID_SHADOW_TYPE";

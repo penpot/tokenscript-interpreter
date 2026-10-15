@@ -1,0 +1,8 @@
+{
+  "name": "color",
+  "type": "token",
+  "description": "A color in any color space.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

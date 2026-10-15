@@ -1,0 +1,8 @@
+{
+  "name": "textCase",
+  "type": "token",
+  "description": "A CSS text-transform keyword: none, uppercase, lowercase or capitalize.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

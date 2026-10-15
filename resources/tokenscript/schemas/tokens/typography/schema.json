@@ -1,0 +1,49 @@
+{
+  "name": "typography",
+  "type": "token",
+  "description": "A text style. Its fields are validated by their own token types.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "fontFamily": {
+        "type": "token",
+        "url": "/api/v1/core/fontFamilies/0/"
+      },
+      "fontSize": {
+        "type": "token",
+        "url": "/api/v1/core/fontSizes/0/"
+      },
+      "fontWeight": {
+        "type": "token",
+        "url": "/api/v1/core/fontWeights/0/"
+      },
+      "letterSpacing": {
+        "type": "token",
+        "url": "/api/v1/core/letterSpacing/0/"
+      },
+      "lineHeight": {
+        "type": "token",
+        "url": "/api/v1/core/lineHeights/0/"
+      },
+      "paragraphSpacing": {
+        "type": "token",
+        "url": "/api/v1/core/dimension/0/"
+      },
+      "paragraphIndent": {
+        "type": "token",
+        "url": "/api/v1/core/dimension/0/"
+      },
+      "textCase": {
+        "type": "token",
+        "url": "/api/v1/core/textCase/0/"
+      },
+      "textDecoration": {
+        "type": "token",
+        "url": "/api/v1/core/textDecoration/0/"
+      }
+    }
+  },
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

@@ -184,6 +184,7 @@ The bundled schemas are in
 | Directory | Contents | URI |
 |---|---|---|
 | `types/<name>/` | Color spaces: sRGB, HSL, OKLCH, P3, ... | `/api/v1/core/<name>/0/` |
+| `tokens/<name>/` | Token types with validation scripts: `dimension`, `opacity`, `typography`, ... (see [Token validation](validation.md#bundled-token-types)) | `/api/v1/core/<name>/0/` |
 | `functions/<name>/` | Functions: `lighten`, `darken`, `saturate`, `desaturate`, `mix`, `invert`, and the CSS color functions `rgb`, `rgba`, `hsl`, `hsla` | `/api/v1/function/<name>/0/` |
 | `constants/<name>/` | CSS named colors | `/api/v1/constants/<name>/0/` |
 
@@ -192,7 +193,7 @@ relative path (`"script": "./initializer.tokenscript"`). The color
 spaces, the color functions and the named colors come from
 `@tokens-studio/tokenscript-schemas` 0.4.0 (MPL-2.0) and are kept
 unchanged, so they can be compared with that package; the `css-*`
-functions are this library's own.
+functions and the token types are this library's own.
 
 `tokenscript.schemas/schemas` returns these schemas with the
 script references replaced by the script text. Nothing is generated:
@@ -201,10 +202,10 @@ script references replaced by the script text. Nothing is generated:
 - In ClojureScript the `inline-json` macro reads them at compile time
   and embeds them in the build as a minified JSON string, decoded on
   first use. The macro fails the build when a script does not parse, a
-  schema references one that is not shipped, or two functions share a
-  keyword. Under shadow-cljs the files it reads are recorded like
-  `shadow.resource/inline` does, so editing a schema recompiles the
-  namespace.
+  schema references one that is not shipped (also the field types of a
+  token type), or two functions share a keyword. Under shadow-cljs the
+  files it reads are recorded like `shadow.resource/inline` does, so
+  editing a schema recompiles the namespace.
 
 `tokenscript.schemas-test` runs the same checks on the JVM.
 

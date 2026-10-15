@@ -1,0 +1,8 @@
+{
+  "name": "spacing",
+  "type": "token",
+  "description": "A gap, padding or margin.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

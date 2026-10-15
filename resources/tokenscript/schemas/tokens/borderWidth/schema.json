@@ -1,0 +1,8 @@
+{
+  "name": "borderWidth",
+  "type": "token",
+  "description": "A border or stroke width, not negative.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

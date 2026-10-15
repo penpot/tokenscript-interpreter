@@ -1,0 +1,8 @@
+{
+  "name": "rotation",
+  "type": "token",
+  "description": "A rotation angle.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

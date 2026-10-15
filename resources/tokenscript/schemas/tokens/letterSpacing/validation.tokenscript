@@ -1,0 +1,5 @@
+// A letter spacing. A number, with or without a unit.
+if (is_number({input}) || is_number_with_unit({input})) [
+  return true;
+];
+return "INVALID_LETTER_SPACING_TYPE";

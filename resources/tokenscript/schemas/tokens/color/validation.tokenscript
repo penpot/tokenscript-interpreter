@@ -1,0 +1,5 @@
+// A color in any color space.
+if (is_color({input})) [
+  return true;
+];
+return "INVALID_COLOR_TYPE";

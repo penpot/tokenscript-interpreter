@@ -1,0 +1,6 @@
+// A text style: a dictionary of fields. The fields are validated by
+// their own token types, see the schema.
+if (is_dictionary({input})) [
+  return true;
+];
+return "INVALID_TYPOGRAPHY_TYPE";

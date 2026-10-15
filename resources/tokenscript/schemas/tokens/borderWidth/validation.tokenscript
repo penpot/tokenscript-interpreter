@@ -1,0 +1,8 @@
+// A border or stroke width: a number, with or without a unit, not negative.
+if (is_number({input}) || is_number_with_unit({input})) [
+  if ({input}.value < 0) [
+    return "INVALID_BORDER_WIDTH_NEGATIVE";
+  ];
+  return true;
+];
+return "INVALID_BORDER_WIDTH_TYPE";

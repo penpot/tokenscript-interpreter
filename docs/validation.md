@@ -4,9 +4,39 @@ A token type schema checks the resolved value of every token of its
 type. A failed check adds a warning to the token's issues; the token
 keeps its value.
 
-The bundled schemas define no token types, so `default-config` validates
-nothing. Register token type schemas to validate, or check the
-resolved values in the caller.
+`default-config` validates the [bundled token types](#bundled-token-types).
+Register more token type schemas to validate other types, or to replace
+a bundled one.
+
+## Bundled token types
+
+The names are the token types of DTCG and Tokens Studio files. A token
+with another type, or without one, is not validated.
+
+| Type | Valid values | Codes |
+|---|---|---|
+| `dimension`, `sizing`, `spacing`, `borderRadius`, `fontSizes`, `letterSpacing`, `lineHeights`, `rotation` | A number, with or without a unit | `INVALID_<TYPE>_TYPE` (`INVALID_DIMENSION_TYPE`, `INVALID_SIZING_TYPE`, ..., `INVALID_FONT_SIZE_TYPE`, `INVALID_LINE_HEIGHT_TYPE`) |
+| `borderWidth` | Like `dimension`, not negative | `INVALID_BORDER_WIDTH_TYPE`, `INVALID_BORDER_WIDTH_NEGATIVE` |
+| `number` | A number without a unit | `INVALID_NUMBER_TYPE`, `INVALID_NUMBER_UNIT` |
+| `opacity` | A number from 0 to 1, or from `0%` to `100%` | `INVALID_OPACITY_TYPE`, `INVALID_OPACITY_RANGE` |
+| `color` | A color in any color space | `INVALID_COLOR_TYPE` |
+| `textCase` | `none`, `uppercase`, `lowercase` or `capitalize`, in any letter case | `INVALID_TEXT_CASE_VALUE` |
+| `textDecoration` | A string; which keywords are allowed is up to the caller | `INVALID_TEXT_DECORATION_TYPE` |
+| `fontWeights` | A number from 1 to 1000, a name (`bold`) or words (`700 italic`) | `INVALID_FONT_WEIGHT_TYPE`, `INVALID_FONT_WEIGHT_RANGE` |
+| `fontFamilies` | A name or a list of names | `INVALID_FONT_FAMILY_TYPE` |
+| `typography` | A dictionary; its fields by their types (below) | `INVALID_TYPOGRAPHY_TYPE` |
+| `shadow` | A list of dictionaries; their fields by their types (below) | `INVALID_SHADOW_TYPE` |
+
+The fields of a typography are `fontFamily`, `fontSize`, `fontWeight`,
+`letterSpacing`, `lineHeight`, `paragraphSpacing`, `paragraphIndent`,
+`textCase` and `textDecoration`; those of a shadow `color`, `offsetX`,
+`offsetY`, `blur` and `spread`. A failing field reports the code of its
+type with the field's `:path`: `INVALID_DIMENSION_TYPE` at `[0 "blur"]`.
+
+The checks are about the kind of value, so `1foo` (the number 1 and the
+word foo, an implicit list) is not a dimension. Units, ranges and
+keywords beyond these are up to the caller: which units a dimension may
+have, or the font weight names it knows.
 
 ## Token type schemas
 
@@ -54,7 +84,9 @@ registry can return, read from their `return "..."` statements.
 
 When the value is valid, its fields are validated by their own types.
 `schema` names them with `{"type": "token", "url": <token type URI>}`,
-in `properties` for an object or in `items` for a list:
+in `properties` for an object or in `items` for a list. Field names
+match ignoring case, `-` and `_`, so `lineHeight` also finds
+`line-height`:
 
 ```json
 {

@@ -1,0 +1,8 @@
+{
+  "name": "dimension",
+  "type": "token",
+  "description": "A length or size.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

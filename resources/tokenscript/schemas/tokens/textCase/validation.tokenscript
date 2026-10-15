@@ -1,0 +1,8 @@
+// A CSS text-transform keyword, in any letter case.
+if (is_string({input})) [
+  variable keyword: String = {input}.trim().lower();
+  if (keyword == "none" || keyword == "uppercase" || keyword == "lowercase" || keyword == "capitalize") [
+    return true;
+  ];
+];
+return "INVALID_TEXT_CASE_VALUE";

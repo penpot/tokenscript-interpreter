@@ -1,0 +1,6 @@
+// A font family name, or a list of names (`Inter, sans-serif`). Names
+// with spaces are implicit lists of words.
+if (is_string({input}) || is_list({input})) [
+  return true;
+];
+return "INVALID_FONT_FAMILY_TYPE";

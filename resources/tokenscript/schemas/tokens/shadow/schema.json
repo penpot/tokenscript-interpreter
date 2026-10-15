@@ -1,0 +1,36 @@
+{
+  "name": "shadow",
+  "type": "token",
+  "description": "A list of shadows. The fields of each are validated by their own token types.",
+  "schema": {
+    "type": "list",
+    "items": {
+      "type": "object",
+      "properties": {
+        "color": {
+          "type": "token",
+          "url": "/api/v1/core/color/0/"
+        },
+        "offsetX": {
+          "type": "token",
+          "url": "/api/v1/core/dimension/0/"
+        },
+        "offsetY": {
+          "type": "token",
+          "url": "/api/v1/core/dimension/0/"
+        },
+        "blur": {
+          "type": "token",
+          "url": "/api/v1/core/dimension/0/"
+        },
+        "spread": {
+          "type": "token",
+          "url": "/api/v1/core/dimension/0/"
+        }
+      }
+    }
+  },
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

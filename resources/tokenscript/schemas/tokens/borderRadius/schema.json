@@ -1,0 +1,8 @@
+{
+  "name": "borderRadius",
+  "type": "token",
+  "description": "A corner radius.",
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}
