@@ -24,12 +24,12 @@
    [tokenscript.schema-uri :as suri]
    [tokenscript.util :as u]))
 
-(def pixel-unit-uri (suri/build-uri {:category "core" :name "px-unit" :version {:major 0}}))
-(def seconds-unit-uri (suri/build-uri {:category "core" :name "seconds-unit" :version {:major 0}}))
-(def ms-unit-uri (suri/build-uri {:category "core" :name "ms-unit" :version {:major 0}}))
-(def rem-unit-uri (suri/build-uri {:category "core" :name "rem-unit" :version {:major 0}}))
-(def ch-unit-uri (suri/build-uri {:category "core" :name "ch-unit" :version {:major 0}}))
-(def percent-unit-uri (suri/build-uri {:category "core" :name "percent-unit" :version {:major 0}}))
+(def pixel-unit-uri "/api/v1/core/px-unit/0/")
+(def seconds-unit-uri "/api/v1/core/seconds-unit/0/")
+(def ms-unit-uri "/api/v1/core/ms-unit/0/")
+(def rem-unit-uri "/api/v1/core/rem-unit/0/")
+(def ch-unit-uri "/api/v1/core/ch-unit/0/")
+(def percent-unit-uri "/api/v1/core/percent-unit/0/")
 
 (def default-specs
   [[seconds-unit-uri

@@ -94,27 +94,28 @@
 
 (defn- latest-version-uri
   [registry uri]
-  (when-let [source (suri/parse-uri uri)]
+  (when (suri/parse-uri uri)
     (->> (keys (:specs registry))
          (keep (fn [spec-uri]
-                 (let [target (suri/parse-uri spec-uri)]
-                   (when (and target
-                              (= (:category target) (:category source))
-                              (= (:name target) (:name source))
-                              (map? (:version target)))
-                     [spec-uri (:version target)]))))
+                 (let [{:keys [version]} (suri/parse-uri spec-uri)]
+                   (when (and (map? version) (suri/same-schema? spec-uri uri))
+                     [spec-uri version]))))
          (sort (fn [[_ a] [_ b]] (suri/compare-versions b a)))
          (ffirst))))
 
+(defn- latest?
+  [uri]
+  (= :latest (:version (suri/parse-uri uri))))
+
 (defn- resolve-uri*
   [registry uri]
-  (if (re-find #"/latest/" uri)
+  (if (latest? uri)
     (latest-version-uri registry uri)
     (loop [candidates (suri/version-candidates uri)]
       (when-let [candidate (first candidates)]
         (cond
           (contains? (:specs registry) candidate) candidate
-          (re-find #"/latest/" candidate)
+          (latest? candidate)
           (or (latest-version-uri registry candidate) (recur (rest candidates)))
           :else (recur (rest candidates)))))))
 

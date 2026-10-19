@@ -79,3 +79,39 @@
                                               :script {:script "variable c: Color.Hex; c.value = \"#000000\"; return c;"}}]})]
       (t/is (= 1 (count (reg/conversion-steps after gray hex))))
       (t/is (nil? (reg/conversion-steps before gray hex))))))
+
+(t/deftest uri-parse-test
+  (t/testing "a URI is an opaque base and a version segment"
+    (t/is (= {:base "/api/v1/core/rgb-color" :version {:major 0 :minor 1} :trailing-slash? true}
+             (suri/parse-uri "/api/v1/core/rgb-color/0.1/")))
+    (t/is (= {:base "types/tokens/color" :version :latest :trailing-slash? false}
+             (suri/parse-uri "types/tokens/color/latest")))
+    (t/is (= {:base "" :version {:major 0} :trailing-slash? false} (suri/parse-uri "0")))
+    (t/is (nil? (suri/parse-uri "types/tokens/color")) "the last segment is not a version")
+    (t/is (nil? (suri/parse-uri "$self")))
+    (t/is (nil? (suri/parse-uri ""))))
+
+  (t/testing "the base identifies the schema"
+    (t/is (= "types/tokens/color" (suri/base-uri "types/tokens/color/0.1.2")))
+    (t/is (= "/api/v1/core/x/" (suri/base-uri "/api/v1/core/x/0/")))
+    (t/is (suri/same-schema? "types/tokens/color/0" "types/tokens/color/1.2"))
+    (t/is (not (suri/same-schema? "types/tokens/color/0" "types/tokens/dimension/0")))
+    (t/is (not (suri/same-schema? "rgb-color" "hsl-color")) "URIs without a version are their own base"))
+
+  (t/testing "version candidates keep the shape of the URI"
+    (t/is (= ["types/tokens/color/0.1.2" "types/tokens/color/0.1" "types/tokens/color/0" "types/tokens/color/latest"]
+             (suri/version-candidates "types/tokens/color/0.1.2")))
+    (t/is (= ["/api/v1/core/x/0/" "/api/v1/core/x/latest/"]
+             (suri/version-candidates "/api/v1/core/x/0/")))
+    (t/is (= ["types/tokens/color"] (suri/version-candidates "types/tokens/color")))))
+
+(t/deftest uri-resolution-test
+  (t/testing "registries resolve versions of URIs of any shape"
+    (let [registry (:tokens (config/register-schemas
+                             (config/make-config)
+                             [{:uri "types/tokens/opacity/0.1" :schema {:name "opacity" :type "token"}}
+                              {:uri "types/tokens/opacity/0.2" :schema {:name "opacity-next" :type "token"}}]))]
+      (t/is (= "types/tokens/opacity/0.1" (reg/resolve-uri registry "types/tokens/opacity/0.1.5")))
+      (t/is (= "types/tokens/opacity/0.2" (reg/resolve-uri registry "types/tokens/opacity/0")))
+      (t/is (= "types/tokens/opacity/0.2" (reg/resolve-uri registry "types/tokens/opacity/latest")))
+      (t/is (nil? (reg/resolve-uri registry "types/tokens/dimension/0"))))))

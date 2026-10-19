@@ -7,13 +7,14 @@
 (ns tokenscript.schema-uri
   "Parsing and construction of tokenscript schema URIs.
 
-  Schemas are identified by path URIs of the form
+  A schema URI is a base followed by a version segment:
 
-    /api/v1/<category>/<name>/<version>/
+    <base>/<version>[/]
 
-  where category is `schema`, `core` or `function` and version is a
-  semantic version prefix (`0`, `0.1`, `0.1.2`) or `latest`. Versions are
-  maps `{:major 0 :minor 1 :patch 2}` with minor/patch optional, or the
+  The base is opaque (`/api/v1/core/rgb-color`, `types/tokens/color`)
+  and the version is a semantic version prefix (`0`, `0.1`, `0.1.2`) or
+  `latest`, as in `@tokens-studio/schema-validation`. Versions are maps
+  `{:major 0 :minor 1 :patch 2}` with minor/patch optional, or the
   keyword `:latest`.
 
   Schemas are never fetched, so the host of an absolute URI
@@ -22,8 +23,6 @@
   hold path URIs."
   (:require
    [clojure.string :as str]))
-
-(def default-api-path "/api/v1")
 
 (defn- parse-int
   [s]
@@ -57,9 +56,10 @@
     :else "latest"))
 
 (defn build-uri
-  "Builds a schema URI from its components."
-  [{:keys [category name version]}]
-  (str default-api-path "/" category "/" name "/" (version->string version) "/"))
+  "Builds a schema URI from its base and version."
+  ([base version] (build-uri base version false))
+  ([base version trailing-slash?]
+   (str base (when-not (= base "") "/") (version->string version) (when trailing-slash? "/"))))
 
 (defn- normalize*
   [uri]
@@ -90,21 +90,22 @@
 
 (defn- parse-uri*
   [uri]
-  (let [parts (remove str/blank? (str/split (normalize uri) #"/"))
-        [api v category name version] parts]
-    (when (and (>= (count parts) 5)
-               (= api "api")
-               (str/starts-with? (str v) "v")
-               (contains? #{"schema" "core" "function"} category))
-      {:category category
-       :name name
-       :version (parse-version version)})))
+  (when (string? uri)
+    (let [uri (normalize uri)
+          trailing-slash? (str/ends-with? uri "/")
+          stripped (cond-> uri trailing-slash? (subs 0 (dec (count uri))))
+          i (str/last-index-of stripped "/")
+          base (if i (subs stripped 0 i) "")
+          version (parse-version (if i (subs stripped (inc i)) stripped))]
+      (when version
+        {:base base :version version :trailing-slash? trailing-slash?}))))
 
 (defonce ^:private uri-cache (atom {}))
 
 (defn parse-uri
-  "Parses a schema URI into `{:category .. :name .. :version ..}` or
-  nil. The host of absolute URIs is ignored."
+  "Parses a schema URI into `{:base .. :version .. :trailing-slash? ..}`,
+  or nil when its last segment is not a version. The host of absolute
+  URIs is ignored."
   [uri]
   (let [m @uri-cache]
     (if (contains? m uri)
@@ -114,31 +115,25 @@
         v))))
 
 (defn base-uri
-  "URI without the version segment."
+  "URI without the version segment: `/api/v1/core/x/0/` ->
+  `/api/v1/core/x/`. URIs without a version are returned as is."
   [uri]
-  (if-let [{:keys [category name]} (parse-uri uri)]
-    (str default-api-path "/" category "/" name "/")
+  (if-let [{:keys [base trailing-slash?]} (parse-uri uri)]
+    (cond-> base trailing-slash? (str "/"))
     (normalize uri)))
-
-(defn semver
-  "Semantic version of a URI or nil for `latest`/unparseable."
-  [uri]
-  (let [v (:version (parse-uri uri))]
-    (when (map? v) v)))
 
 (defn version-candidates
   "URIs to try when resolving `uri`, from most to least specific:
   `0.0.1` -> `[0.0.1 0.0 0 latest]`."
   [uri]
-  (let [uri (normalize uri)]
-    (if-let [{:keys [version] :as components} (parse-uri uri)]
-      (if (map? version)
-        (let [{:keys [major minor patch]} version]
-          (cond-> [uri]
-            (some? patch) (conj (build-uri (assoc components :version {:major major :minor minor})))
-            (some? minor) (conj (build-uri (assoc components :version {:major major})))
-            :always (conj (build-uri (assoc components :version :latest)))))
-        [uri])
+  (let [uri (normalize uri)
+        {:keys [base version trailing-slash?]} (parse-uri uri)]
+    (if (map? version)
+      (let [{:keys [major minor patch]} version]
+        (cond-> [uri]
+          (some? patch) (conj (build-uri base {:major major :minor minor} trailing-slash?))
+          (some? minor) (conj (build-uri base {:major major} trailing-slash?))
+          :always (conj (build-uri base :latest trailing-slash?))))
       [uri])))
 
 (defn compare-versions
@@ -154,12 +149,4 @@
 (defn same-schema?
   "Whether two URIs identify the same schema ignoring the version."
   [a b]
-  (let [ca (parse-uri a) cb (parse-uri b)]
-    (if (and ca cb)
-      (and (= (:category ca) (:category cb))
-           (= (:name ca) (:name cb)))
-      (= (base-uri a) (base-uri b)))))
-
-(defn schema-name
-  [uri]
-  (:name (parse-uri uri)))
+  (= (base-uri a) (base-uri b)))

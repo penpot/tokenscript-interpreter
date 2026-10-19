@@ -26,8 +26,7 @@
    [tokenscript.schema-uri :as suri]
    [tokenscript.util :as u]))
 
-(def hex-color-uri
-  (suri/build-uri {:category "core" :name "hex-color" :version {:major 0}}))
+(def hex-color-uri "/api/v1/core/hex-color/0/")
 
 (def default-specs
   {hex-color-uri

@@ -30,16 +30,19 @@ schema raises `:config/invalid-specification`.
 
 ## URIs
 
-Schemas are identified by path URIs and never fetched:
+Schemas are identified by URIs and never fetched. A URI is a base and a
+version segment, as in `@tokens-studio/schema-validation`:
 
 ```text
-/api/v1/<category>/<name>/<version>/
+<base>/<version>[/]
 ```
 
-The category is `core`, `function` or `schema`. The version is `0`,
-`0.1`, `0.1.2` or `latest`. A lookup tries the URI, then the shorter
-versions, then the latest registered one: `0.0.1`, `0.0`, `0`,
-`latest`.
+The base is opaque: `/api/v1/core/rgb-color/0/` and
+`types/tokens/color/0` are both valid, and URIs with the same base are
+versions of the same schema. The version is `0`, `0.1`, `0.1.2` or
+`latest`. A lookup tries the URI, then the shorter versions, then the
+latest registered one: `0.0.1`, `0.0`, `0`, `latest`. A URI whose last
+segment is not a version is only found as it is.
 
 Other tokenscript tools write URIs with a host
 (`https://<host>/api/v1/core/rgb-color/0/`). The host is dropped when a
