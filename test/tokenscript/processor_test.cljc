@@ -190,7 +190,8 @@
 (t/deftest rename-token-test
   (let [res (process {"a" "10" "b" "{a} + 5"})
         rn (proc/rename-token (:state res) "a" "alpha" {:update-references? true})]
-    (t/is (= "{alpha} + 5" (get-in rn [:state :tokens "b" :value])))
+    (t/is (= "{alpha} + 5" (get-in rn [:state :tokens "b"])) "the data is rewritten in the shape it was given")
+    (t/is (= "{alpha} + 5" (get-in rn [:state :data "b" :value])))
     (t/is (= "15" (value rn "b")))
     (t/is (= #{"alpha" "b"} (proc/affected-tokens rn)))
     (t/is (not (contains? (:tokens rn) "a"))))
@@ -259,7 +260,98 @@
     (t/testing "by default operations apply to the set a token is taken from"
       (let [upd (proc/update-token (:state res) "a" {:value "20"})]
         (t/is (= "20" (get-in upd [:state :sets 1 1 "a" :value])))
-        (t/is (= "1" (get-in upd [:state :sets 0 1 "a" :value])))))))
+        (t/is (= "1" (get-in upd [:state :sets 0 1 "a"])) "the other set keeps its data as given")))))
+
+;; A caller's own token records are kept as given and read by the
+;; `:token-reader` when a token is parsed; unchanged records are skipped by
+;; identity.
+(t/deftest token-reader-test
+  (let [reader (fn [{:keys [val kind id]}]
+                 (if (nil? val)
+                   (err/error-map :reader/empty-value {:data {:id id}})
+                   (cond-> {:value val :metadata id}
+                     kind (assoc :type (name kind)))))
+        build (fn [sets] (proc/build sets {:config (h/core-config) :token-reader reader}))
+        a {:val "8" :kind :number :id 1}
+        b {:val "{a} * 2" :id 2}
+        c {:val "1" :id 3}
+        res (build [[:core {"a" a "b" b "c" c}]])]
+    (t/is (= "16" (value res "b")))
+    (t/is (= 1 (proc/metadata res "a")))
+    (t/is (identical? a (get-in res [:state :tokens "a"])) "the data is stored as given")
+    (t/testing "an operation re-reads only the tokens whose data changed"
+      (let [reads (atom [])
+            counting (fn [data] (swap! reads conj (:id data)) (reader data))
+            res (proc/build [[:core {"a" a "b" b "c" c}]] {:config (h/core-config) :token-reader counting})
+            _ (reset! reads [])
+            upd (proc/set-sets (:state res) [[:core {"a" (assoc a :val "10") "b" b "c" c}]])]
+        (t/is (= "20" (value upd "b")))
+        (t/is (= [1] @reads))
+        (t/is (identical? (get-in res [:tokens "c"]) (get-in upd [:tokens "c"])))))
+    (t/testing "operations take the caller's shape too"
+      (let [upd (proc/update-token (:state res) "a" {:val "3" :kind :number :id 1})]
+        (t/is (= "6" (value upd "b")))))
+    (t/testing "an error map from the reader fails the token and its dependents"
+      (let [res (build [[:core {"a" {:val nil :id 1} "b" b}]])]
+        (t/is (= [:reader/empty-value] (codes res "a")))
+        (t/is (nil? (get-in res [:tokens "a"])))
+        (t/is (= [:processor/dependency-error] (codes res "b")))
+        (t/is (= :reader/empty-value (get-in res [:issues "b" 0 :data :cause :code])))))
+    (t/testing "type validation reads the type from the reader"
+      (let [res (proc/build [[:core {"a" {:val "8px" :kind :number :id 1}
+                                     "early" {:val 8 :kind :color :id 2}}]]
+                            {:config (tsc/default-config) :token-reader reader})]
+        (t/is (seq (codes res "a")))
+        (t/is (seq (codes res "early")) "also for a value resolved while parsing")))))
+
+;; The `:token-writer` turns each token into the caller's output entry; an
+;; operation writes only the names it changed.
+(t/deftest token-writer-test
+  (let [cfg (h/core-config)
+        writes (atom [])
+        writer (fn [token value issues]
+                 (swap! writes conj token)
+                 {:token token
+                  :value (if (sym/symbol? value) (sym/to-string value cfg) value)
+                  :codes (mapv :code issues)})
+        core {"base" "8" "double" "{base} * 2" "other" "1" "bad" "{missing}"}
+        res (proc/build [[:core core]] {:config cfg :token-writer writer})]
+    (t/is (= {:token "{base} * 2" :value "16" :codes []} (get-in res [:output "double"])))
+    (t/is (= [:processor/dependency-error] (get-in res [:output "bad" :codes])))
+    (t/is (nil? (:output (proc/build [[:core core]] {:config cfg}))) "no writer, no output")
+    (t/testing "an operation writes only the changed names"
+      (reset! writes [])
+      (let [upd (proc/set-sets (:state res) [[:core (assoc core "base" "10")]])]
+        (t/is (= #{"10" "{base} * 2"} (set @writes)))
+        (t/is (= "20" (get-in upd [:output "double" :value])))
+        (t/is (identical? (get-in res [:output "other"]) (get-in upd [:output "other"])))))
+    (t/testing "a removed token leaves the output"
+      (t/is (not (contains? (:output (proc/delete-token (:state res) "other")) "other"))))))
+
+(t/deftest set-sets-changed-test
+  (let [core {"base" "8" "double" "{base} * 2" "other" "1"}
+        theme {"accent" "#f00"}
+        res (build-sets [[:core core] [:theme theme]])]
+    (t/testing "the same sets change nothing"
+      (t/is (= #{} (:changed (proc/set-sets (:state res) [[:core core] [:theme theme]])))))
+    (t/testing "an edit in one set changes the edited name and its dependents"
+      (let [upd (proc/set-sets (:state res) [[:core (assoc core "base" "10")] [:theme theme]])]
+        (t/is (= #{"base" "double"} (:changed upd)))
+        (t/is (= "20" (value upd "double")))
+        (t/is (identical? (get-in res [:tokens "other"]) (get-in upd [:tokens "other"])))))
+    (t/testing "adding and removing sets changes the names they define"
+      (let [added (proc/set-sets (:state res) [[:core core] [:mid {"other" "5"}] [:theme theme]])
+            removed (proc/set-sets (:state res) [[:core core]])]
+        (t/is (= #{"other"} (:changed added)))
+        (t/is (= #{"accent"} (:changed removed)))
+        (t/is (not (contains? (:tokens removed) "accent")))))
+    (t/testing "reordering sets compares every name"
+      (let [res (build-sets [[:a {"x" "1"}] [:b {"x" "2"}]])
+            swapped (proc/set-sets (:state res) [[:b {"x" "2"}] [:a {"x" "1"}]])]
+        (t/is (= "1" (value swapped "x")))
+        (t/is (= #{"x"} (:changed swapped)))))
+    (t/testing "the winning data is readable as given"
+      (t/is (= "#f00" (proc/input res "accent"))))))
 
 (t/deftest set-sets-test
   (let [core {"base" "8" "other" "{base} + 1" "color.bg" "{mode.bg}"}
@@ -386,20 +478,34 @@
                                       %)
                                    is)))))))
 
+(defn- differing-names
+  "Names whose `:tokens`, `:resolved`, `:issues` or `:graph` entry differs
+  between the results `a` and `b`."
+  [a b]
+  (into #{}
+        (filter (fn [name] (some #(not= (get-in a [% name]) (get-in b [% name])) [:tokens :resolved :issues :graph])))
+        (concat (keys (:resolved a)) (keys (:resolved b)))))
+
 (t/deftest incremental-operations-property-test
   (let [property
         (prop/for-all [sets gen-sets
                        ops (gen/vector gen-op 1 12)]
                       (let [cfg (h/core-config)]
-                        (loop [st (:state (proc/build sets {:config cfg})) ops ops]
+                        (loop [prev (proc/build sets {:config cfg :token-writer vector}) ops ops]
                           (if-let [op (first ops)]
-                            (if-let [res (apply-op st op)]
+                            (if-let [res (apply-op (:state prev) op)]
                               (let [fresh (proc/build (get-in res [:state :sets]) {:config cfg})]
-                                (if (= (snapshot (normalize-cycle-issues fresh))
-                                       (snapshot (normalize-cycle-issues res)))
-                                  (recur (:state res) (rest ops))
+                                (if (and (= (snapshot (normalize-cycle-issues fresh))
+                                            (snapshot (normalize-cycle-issues res)))
+                                         (= (:graph fresh) (:graph res))
+                                         (= (set (keys (:resolved fresh))) (set (keys (:resolved res))))
+                                         (= (:output res)
+                                            (into {} (map (fn [n] [n (vector (proc/input res n) (get-in res [:tokens n]) (get-in res [:issues n]))]))
+                                                  (keys (:tokens res))))
+                                         (every? (:changed res) (differing-names prev res)))
+                                  (recur res (rest ops))
                                   false))
-                              (recur st (rest ops)))
+                              (recur prev (rest ops)))
                             true))))
         result (tc/quick-check 100 property :max-size 50)]
     (t/is (true? (:pass? result))
