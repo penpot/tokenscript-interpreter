@@ -8,9 +8,9 @@
   "Platform helpers for the tokenscript interpreter.
 
   Tokenscript semantics are specified against JavaScript numbers and
-  strings (see the compliance suite), so this namespace provides
-  JS-compatible number formatting, parsing and string splitting that
-  behave the same on the JVM and in ClojureScript."
+  strings, like the TypeScript reference interpreter, so this namespace
+  provides JS-compatible number formatting, parsing and string splitting
+  that behave the same on the JVM and in ClojureScript."
   (:require
    [clojure.string :as str]
    [tokenscript.math :as mth])

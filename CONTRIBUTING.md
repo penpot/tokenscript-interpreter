@@ -6,8 +6,7 @@ including its Code of Conduct and the Developer's Certificate of Origin.
 
 ## Pull requests
 
-Before opening one, run `bb lint` and `bb test` with the compliance
-suite checked out (`bb compliance:fetch`). See
+Before opening one, run `bb lint` and `bb test`. See
 [docs/testing.md](docs/testing.md).
 
 ## Commits

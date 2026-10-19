@@ -8,10 +8,7 @@ the implementation; the pages below describe the language, the schemas
 and the resolver.
 
 It is a port of the TypeScript reference implementation
-([tokens-studio/tokenscript-interpreter](https://github.com/tokens-studio/tokenscript-interpreter))
-and is checked against the
-[compliance suite](https://github.com/tokens-studio/tokenscript-compliance-suite)
-shared by the implementations, see [Testing](testing.md).
+([tokens-studio/tokenscript-interpreter](https://github.com/tokens-studio/tokenscript-interpreter)).
 
 ## Pages
 
@@ -21,7 +18,7 @@ shared by the implementations, see [Testing](testing.md).
 - [Token validation](validation.md) — token type schemas and their validation scripts
 - [Resolver](resolver.md) — resolving token sets, incremental updates and previews
 - [Errors and issues](errors.md) — error maps, error codes and the issues of a token
-- [Testing](testing.md) — unit tests, the compliance suite and its known divergences
+- [Testing](testing.md) — the test tasks and the language tests
 
 ## Usage
 

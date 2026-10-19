@@ -104,9 +104,5 @@ jobs:
             ~/.gitlibs
           key: deps-${{ matrix.platform }}-${{ hashFiles('deps.edn') }}
 
-      # The test tasks run the suite when its checkout exists.
-      - name: Check out the compliance suite
-        run: bb compliance:fetch
-
       - name: Tests
         run: bb test:${{ matrix.platform }}

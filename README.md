@@ -11,10 +11,7 @@ runs on the JVM and in JavaScript. Penpot uses it to resolve design
 tokens.
 
 It is a port of the TypeScript reference implementation,
-[tokens-studio/tokenscript-interpreter](https://github.com/tokens-studio/tokenscript-interpreter),
-and runs the shared
-[compliance suite](https://github.com/tokens-studio/tokenscript-compliance-suite)
-in CI.
+[tokens-studio/tokenscript-interpreter](https://github.com/tokens-studio/tokenscript-interpreter).
 
 ## Installation
 
@@ -61,9 +58,8 @@ See [docs/](docs/README.md):
 Needs the Clojure CLI, [Babashka](https://babashka.org) and Node.js.
 
 ```bash
-bb compliance:fetch   # once: the compliance suite at the pinned commits
-bb test               # JVM and ClojureScript tests
-bb lint               # clj-kondo and cljfmt check
+bb test   # JVM and ClojureScript tests
+bb lint   # clj-kondo and cljfmt check
 ```
 
 See [Testing](docs/testing.md) for the other tasks and

@@ -1,52 +1,13 @@
 {:tasks
- {:requires ([babashka.fs :as fs])
-
-  :init
-  (do
-    ;; Inputs of the compliance suite, pinned. Both repos are public.
-    (def compliance-repos
-      {"suite" {:url "https://github.com/tokens-studio/tokenscript-compliance-suite"
-                :sha "66edb9152eb49dee441a426d5e2e62da08063c22"}
-       "typescript-interpreter" {:url "https://github.com/tokens-studio/tokenscript-interpreter"
-                                 :sha "ad4142f30d9e481e908e3c881ce834b1bab2463d"}})
-
-    (def compliance-dir "target/compliance")
-
-    (defn compliance-env
-      "The suite variables: from the environment when set, else the
-      checkouts of `bb compliance:fetch` when they exist."
-      []
-      (let [suite (fs/path compliance-dir "suite")
-            specs (fs/path compliance-dir "typescript-interpreter" "data" "specifications")]
-        (cond
-          (System/getenv "TOKENSCRIPT_COMPLIANCE_DIR") {}
-
-          (fs/exists? suite)
-          {"TOKENSCRIPT_COMPLIANCE_DIR" (str (fs/absolutize suite))
-           "TOKENSCRIPT_SPECIFICATIONS_DIR" (str (fs/absolutize specs))}
-
-          :else
-          (do (println "Compliance suite skipped: run `bb compliance:fetch` first.")
-              {})))))
-
-  compliance:fetch
-  {:doc "Checks out the compliance suite and the specifications at the pinned commits"
-   :task (doseq [[dir {:keys [url sha]}] compliance-repos
-                 :let [path (str (fs/path compliance-dir dir))]]
-           (when-not (fs/exists? path)
-             (shell "git" "clone" "--filter=blob:none" "--no-checkout" url path))
-           (shell {:dir path} "git" "fetch" "--quiet" "origin" sha)
-           (shell {:dir path} "git" "-c" "advice.detachedHead=false" "checkout" "--quiet" sha))}
-
-  test:jvm
+ {test:jvm
   {:doc "JVM tests. Optional namespaces: bb test:jvm lexer processor"
-   :task (apply shell {:extra-env (compliance-env)} "clojure" "-M:test"
+   :task (apply shell "clojure" "-M:test"
                 (mapcat (fn [n] ["-n" (str "tokenscript." n "-test")]) *command-line-args*))}
 
   test:cljs
   {:doc "ClojureScript tests on node"
    :task (do (shell "clojure" "-M:cljs" "compile" "test")
-             (shell {:extra-env (compliance-env)} "node" "target/tests/test.js"))}
+             (shell "node" "target/tests/test.js"))}
 
   test
   {:doc "JVM and ClojureScript tests"
