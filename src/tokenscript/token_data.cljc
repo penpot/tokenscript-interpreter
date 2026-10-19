@@ -65,17 +65,13 @@
     :else
     {:value v}))
 
-(defn normalize-tokens
-  "Normalizes a flat map of token name to token input. Returns `tokens`
-  itself when it is already normalized."
+(defn string-keys
+  "A map of token name to token data with string names. Returns `tokens`
+  itself when its keys are strings already, so the data is kept as given."
   [tokens]
   (if (every? string? (keys tokens))
-    (reduce-kv (fn [acc k v]
-                 (let [v' (normalize v)]
-                   (if (identical? v v') acc (assoc acc k v'))))
-               tokens
-               tokens)
-    (into {} (map (fn [[k v]] [(key-name k) (normalize v)])) tokens)))
+    tokens
+    (into {} (map (fn [[k v]] [(key-name k) v])) tokens)))
 
 ;; Object parsers -------------------------------------------------------------
 
