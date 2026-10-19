@@ -74,19 +74,12 @@
   "Error of a structured token field, reported on the parent token with
   the field `:path`."
   [error parent field-path]
-  (let [path (td/parse-field-path field-path)
-        at-path (if (seq path)
-                  #(str "Error at " (str/join "." (map str path)) ": " %)
-                  identity)]
-    (-> error
-        (assoc :token-name parent :path path)
-        (update :hint at-path)
-        (update :message at-path))))
+  (assoc error :token-name parent :path (td/parse-field-path field-path)))
 
 (defn- exception->error
   [e]
   (or (err/->error-map e)
-      (err/error-map :processor/unknown-parsing-error {:data {:error (err/describe e)}})))
+      (err/error-map :processor/unknown-parsing-error {:data (err/cause-data e)})))
 
 ;; State ----------------------------------------------------------------------
 

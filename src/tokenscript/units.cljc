@@ -79,7 +79,7 @@
                    (contains? (set valid-unit-types) (:type spec)))
       (err/raise :config/invalid-specification
                  {:data {:kind "unit" :uri uri
-                         :error "expected a map with :name, :keyword and :type absolute|relative"}}))
+                         :reason :invalid-shape}}))
     (cond-> (update spec :conversions #(vec (or % [])))
       (:to_absolute spec) (assoc-in [:to_absolute :ast] (:ast (parser/parse (get-in spec [:to_absolute :script])))))))
 

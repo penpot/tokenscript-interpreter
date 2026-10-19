@@ -110,6 +110,24 @@
       (t/is (= [nil] (errors lenient 2)))
       (t/is (= ["INVALID_OPACITY_RANGE"] (errors cfg 2))))))
 
+(t/deftest script-failures-test
+  (let [with-script (fn [script] (update (tsc/default-config) :tokens token-types/register-validation "opacity" script))
+        result (fn [cfg] (-> (validation/validate cfg "opacity" (sym/number 2)) first (select-keys [:error :data])))
+        unparsable (with-script "return (;")
+        raising (with-script "return {input} / 0;")
+        not-a-code (with-script "return 5;")]
+    (t/is (= {:error "VALIDATION_INVALID_SCRIPT" :data {:script "return (;"}} (result unparsable)))
+    (t/is (= {:error "VALIDATION_INVALID_RESULT"} (result not-a-code)))
+    (t/testing "a raising script keeps its error as the cause"
+      (t/is (= "VALIDATION_ERROR" (:error (result raising))))
+      (t/is (= :operations/division-by-zero (get-in (result raising) [:data :cause :code])))
+      (t/is (= (result raising) (result raising)) "the cached result keeps the data"))
+    (t/testing "issues carry the data and no message"
+      (let [issue (get-in (tsc/build {"x" {:value "2" :type "opacity"}} {:config unparsable}) [:issues "x" 0])]
+        (t/is (= {:type :tokenscript/issue :code "VALIDATION_INVALID_SCRIPT" :severity :warning
+                  :token-name "x" :path nil :data {:script "return (;" :token-type "opacity"}}
+                 issue))))))
+
 (t/deftest error-types-test
   (t/is (= ["INVALID_NUMBER_UNIT" "INVALID_NUMBER_TYPE"]
            (token-types/validation-error-types (:tokens (tsc/default-config)) "number"))))

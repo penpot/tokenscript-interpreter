@@ -74,8 +74,8 @@ Other results become codes too:
 | Result | Code |
 |---|---|
 | anything but `true` or a string | `VALIDATION_INVALID_RESULT` |
-| the script raises | `VALIDATION_ERROR: <message>` |
-| the script does not parse | `VALIDATION_ERROR: invalid validation script: <script>` |
+| the script raises | `VALIDATION_ERROR`, with the error as `:cause` (or `:error`) in `:data` |
+| the script does not parse | `VALIDATION_INVALID_SCRIPT`, with `:script` in `:data` |
 
 `token-types/validation-error-types` lists the codes the scripts of a
 registry can return, read from their `return "..."` statements.
@@ -113,7 +113,7 @@ stops at a depth of 10 with `MAX_VALIDATION_DEPTH_EXCEEDED`.
 
 | Function | |
 |---|---|
-| `validation/validate` | Validates a symbol as a token type. Returns `{:valid? :error :token-type :path}` results. |
+| `validation/validate` | Validates a symbol as a token type. Returns `{:valid? :error :token-type :path :data}` results. |
 | `validation/type-issues` | The failures as issues, as the resolver stores them; see [Errors and issues](errors.md#issues). |
 | `token-types/register-validation` | Sets the validation script of a token type in a registry. |
 

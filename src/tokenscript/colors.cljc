@@ -48,11 +48,11 @@
   [uri spec]
   (let [spec (if (string? spec)
                (err/raise :config/invalid-specification
-                          {:data {:kind "color" :uri uri :error "string specifications must be decoded first"}})
+                          {:data {:kind "color" :uri uri :reason :undecoded-string}})
                (walk/keywordize-keys spec))]
     (when-not (and (map? spec) (string? (:name spec)) (= "color" (:type spec)))
       (err/raise :config/invalid-specification
-                 {:data {:kind "color" :uri uri :error "expected a map with :name and :type \"color\""}}))
+                 {:data {:kind "color" :uri uri :reason :invalid-shape}}))
     (-> spec
         (update :initializers #(vec (or % [])))
         (update :conversions #(vec (or % []))))))
@@ -64,7 +64,7 @@
                         (:ast (parser/parse (:script script)))
                         (catch #?(:clj Throwable :cljs :default) e
                           (err/raise :color/initializer-construct-failed
-                                     {:data {:error (err/describe e)}})))]
+                                     {:data (err/cause-data e)})))]
               (assoc-in registry [:initializers (u/name-key keyword)] {:ast ast :keyword keyword})))
           registry
           (:initializers spec)))

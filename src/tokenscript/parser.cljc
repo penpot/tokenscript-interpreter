@@ -91,40 +91,9 @@
   [p info]
   (vswap! p update :incomplete conj info))
 
-(defn- format-error
-  "Renders `message` with the source lines around the token and a
-  pointer, like the other tokenscript implementations."
-  [p message token]
-  (let [{:keys [text line column]} (lex/source-info (:lexer @p))
-        lines (str/split (or text "") #"\n" -1)
-        token-line (or (:line token) 1)
-        error-line-text (nth lines (dec token-line) "")
-        col (if (= line token-line)
-              column
-              (let [idx (str/index-of error-line-text (str (or (:value token) "")))]
-                (if (and idx (>= idx 0)) (inc idx) 1)))
-        context 2
-        start-line (max 0 (- token-line 1 context))
-        end-line (min (dec (count lines)) (+ (dec token-line) context))
-        body (apply str
-                    (for [i (range start-line (inc end-line))
-                          :let [line-num (inc i)
-                                prefix (str (let [s (str line-num)]
-                                              (str (apply str (repeat (- 3 (count s)) " ")) s))
-                                            " | ")
-                                line-text (nth lines i "")]]
-                      (str prefix line-text "\n"
-                           (when (= line-num token-line)
-                             (str (apply str (repeat (+ (dec (count prefix)) (max 0 (dec col))) " ")) "^\n")))))]
-    (str message "\n\n" body)))
-
 (defn- parse-error
   [p code data]
-  (let [tok (current p)
-        message (or (some-> (:message data) str)
-                    (if (= code :parser/invalid-syntax) "Invalid syntax" (err/code->compliance-code code)))]
-    (err/raise code {:token tok
-                     :data (assoc (or data {}) :message (format-error p message tok))})))
+  (err/raise code {:token (current p) :data data}))
 
 (defn- eat
   "Consumes the current token when it has `type`, returning it."
@@ -365,12 +334,12 @@
                           (>= j n) nil
                           (= (ch j) "`")
                           (parse-error p :parser/invalid-syntax
-                                       {:message "Nested template strings are not allowed inside ${...}"})
+                                       {:reason :nested-template-string})
                           :else
                           (let [depth (case (ch j) "{" (inc depth) "}" (dec depth) depth)]
                             (if (zero? depth) j (recur (inc j) depth)))))]
               (when (nil? end)
-                (parse-error p :parser/invalid-syntax {:message "Unterminated ${...} in template string"}))
+                (parse-error p :parser/invalid-syntax {:reason :unterminated-template-interpolation}))
               (flush-literal)
               (let [sub (make-parser (lex/make-lexer (subs raw start end)) nil)
                     node (expr sub)]
@@ -385,15 +354,15 @@
                         (cond
                           (>= j n) nil
                           (= (ch j) "{")
-                          (parse-error p :parser/invalid-syntax {:message "Nested braces in template reference"})
+                          (parse-error p :parser/invalid-syntax {:reason :nested-template-reference})
                           (= (ch j) "}") j
                           :else (recur (inc j))))]
               (when (nil? end)
-                (parse-error p :parser/invalid-syntax {:message "Unterminated {ref} in template string"}))
+                (parse-error p :parser/invalid-syntax {:reason :unterminated-template-reference}))
               (flush-literal)
               (let [ref-path (str/replace (subs raw start end) #"[ \t]" "")]
                 (when (= "" ref-path)
-                  (parse-error p :parser/invalid-syntax {:message "Empty reference in template string"}))
+                  (parse-error p :parser/invalid-syntax {:reason :empty-template-reference}))
                 (add-reference p ref-path)
                 (vswap! parts conj {:node :reference :value ref-path
                                     :token (assoc tok :type :reference :value ref-path)}))
@@ -673,7 +642,7 @@
         (when (and (= :reserved-keyword (:type tok))
                    (contains? lex/script-only-statement-keywords (:value tok)))
           (parse-error p :parser/unallowed-inline-syntax
-                       {:original-error (str "Unexpected token: " (:value tok))})))
+                       {:token (str (:value tok))})))
       (let [node (list-expr p)]
         (when (and (not (tolerant? p)) (not= :eof (current-type p)))
           (parse-error p :parser/unexpected-token {:token (str (:value (current p)))}))
@@ -682,7 +651,7 @@
     :else
     (let [node (statements-list p)]
       (when (not= :eof (current-type p))
-        (parse-error p :parser/invalid-syntax {:message "Unexpected token at the end of input."}))
+        (parse-error p :parser/invalid-syntax {:reason :trailing-input}))
       node)))
 
 (defn lexer-options

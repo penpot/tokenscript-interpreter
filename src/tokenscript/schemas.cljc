@@ -172,7 +172,7 @@
          (try
            (parser/parse script)
            (catch Throwable e
-             (fail (str "A script of " (:uri s) " does not parse: " (ex-message e)) {:uri (:uri s)}))))
+             (fail (str "A script of " (:uri s) " does not parse: " (ex-message e)) {:uri (:uri s) :error (ex-data e)}))))
        (doseq [s schemas
                uri (referenced-uris s)]
          (when-not (contains? uris uri)

@@ -32,7 +32,7 @@
   (let [spec (walk/keywordize-keys spec)]
     (when-not (and (map? spec) (string? (:name spec)) (= "token" (:type spec)))
       (err/raise :config/invalid-specification
-                 {:data {:kind "token" :uri uri :error "expected a map with :name and :type \"token\""}}))
+                 {:data {:kind "token" :uri uri :reason :invalid-shape}}))
     spec))
 
 (defn- parse-validation

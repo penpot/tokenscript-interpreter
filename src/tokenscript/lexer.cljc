@@ -348,7 +348,7 @@
       (if (:tolerant? st)
         [(token :hex-color result st start) st]
         (lex-error st :lexer/invalid-hex-color-format
-                   {:value result :expected-length "#RGB, #RGBA, #RRGGBB, or #RRGGBBAA"})))))
+                   {:value result})))))
 
 (defn- simple-token
   "Consumes `s` and returns a token of `type` with `value`."

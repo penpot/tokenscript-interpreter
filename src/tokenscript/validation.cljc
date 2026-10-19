@@ -9,8 +9,9 @@
   docs/validation.md.
 
   A validation result is `{:valid? bool :error code :token-type type
-  :path [..]}`; `:path` points at the nested field for failures inside
-  structured values."
+  :path [..] :data {..}}`; `:path` points at the nested field for
+  failures inside structured values and `:data` holds the details of
+  some codes."
   (:require
    [clojure.string :as str]
    [tokenscript.errors :as err]
@@ -22,9 +23,11 @@
 (def max-depth 10)
 
 (defn- failure
-  [error token-type path]
-  (cond-> {:valid? false :error error :token-type token-type}
-    (seq path) (assoc :path path)))
+  ([error token-type path] (failure error token-type path nil))
+  ([error token-type path data]
+   (cond-> {:valid? false :error error :token-type token-type}
+     (seq path) (assoc :path path)
+     (some? data) (assoc :data data))))
 
 (defn- memoized
   "`(f)` cached under `[kind k]` in the cache of `registry`. The keys are
@@ -50,19 +53,19 @@
   (:spec (memoized registry ::urls url #(hash-map :spec (reg/spec registry url)))))
 
 (defn- script-error
-  "Error code of the validation script for `value`, nil when it is valid
-  or the type has no script."
+  "`{:error code :data ..}` of the validation script for `value`, nil when
+  it is valid. `:data` is only there for some codes."
   [config {:keys [ast script]} value]
   (if (nil? ast)
-    (str "VALIDATION_ERROR: invalid validation script: " script)
+    {:error "VALIDATION_INVALID_SCRIPT" :data {:script script}}
     (try
       (let [result (interp/interpret ast {:references {"input" value} :config config})]
         (cond
           (and (sym/boolean? result) (true? (:value result))) nil
-          (sym/string? result) (:value result)
-          :else "VALIDATION_INVALID_RESULT"))
+          (sym/string? result) {:error (:value result)}
+          :else {:error "VALIDATION_INVALID_RESULT"}))
       (catch #?(:clj Throwable :cljs :default) e
-        (str "VALIDATION_ERROR: " (err/describe e))))))
+        {:error "VALIDATION_ERROR" :data (err/cause-data e)}))))
 
 ;; Script results only depend on the type and the value. Scalar values are
 ;; immutable and repeat within a build and across builds, so their results
@@ -132,8 +135,8 @@
 (defn- run-script
   [config token-type value path]
   (let [{:keys [validation]} (type-info (:tokens config) token-type)]
-    (if-let [error (when validation (cached-script-error config validation token-type value))]
-      (failure error token-type path)
+    (if-let [{:keys [error data]} (when validation (cached-script-error config validation token-type value))]
+      (failure error token-type path data)
       {:valid? true :token-type token-type})))
 
 (def ^:private property-keys
@@ -236,19 +239,16 @@
   (validate* config token-type value #{} [] 0))
 
 (defn- ->issue
-  [token-name token-type {:keys [error path] :as result}]
-  (let [nested? (seq path)]
-    {:type :tokenscript/issue
-     :code error
-     :severity :warning
-     :message (if nested?
-                (str "Validation failed at " (str/join "." (map str path)) ": " error)
-                (str "Token validation failed: " error))
-     :token-name token-name
-     :path path
-     :data (if nested?
-             {:token-type (:token-type result) :parent-token-type token-type}
-             {:token-type token-type})}))
+  [token-name token-type {:keys [error path data] :as result}]
+  {:type :tokenscript/issue
+   :code error
+   :severity :warning
+   :token-name token-name
+   :path path
+   :data (merge data
+                (if (seq path)
+                  {:token-type (:token-type result) :parent-token-type token-type}
+                  {:token-type token-type}))})
 
 (defn type-issues
   "Validation issues for a resolved token value. Returns `[]` when the
@@ -263,7 +263,7 @@
       ;; Most tokens: a scalar of a type without fields
       (and (cacheable? value) (nil? (:schema spec)))
       (if-let [error (when validation (cached-script-error config validation token-type value))]
-        [(->issue token-name token-type {:error error :token-type token-type})]
+        [(->issue token-name token-type (assoc error :token-type token-type))]
         [])
 
       :else

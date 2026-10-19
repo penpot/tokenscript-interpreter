@@ -47,8 +47,10 @@
     (sym/number n)))
 
 (defn- out-of-range
-  [function-name constraint]
-  (err/raise :functions/argument-out-of-range {:data {:function-name function-name :constraint constraint}}))
+  ([function-name constraint] (out-of-range function-name constraint nil))
+  ([function-name constraint data]
+   (err/raise :functions/argument-out-of-range
+              {:data (assoc data :function-name function-name :constraint constraint)})))
 
 (defn- expects-type
   [function-name expected position]
@@ -91,14 +93,14 @@
   "`log(x)` and `log(x, base)`."
   [[arg base]]
   (let [v (extract-number arg "log")]
-    (when (<= v 0) (out-of-range "log" "positive"))
+    (when (<= v 0) (out-of-range "log" :positive))
     (with-unit-of arg
       (if (nil? base)
         (Math/log v)
         (let [b (extract-number base "log")]
           (when (or (<= b 0) (== b 1))
             (err/raise :functions/invalid-base
-                       {:data {:function-name "log" :constraint "positive and not equal to 1"}}))
+                       {:data {:function-name "log" :constraint :positive-not-one}}))
           (/ (Math/log v) (Math/log b)))))))
 
 (defn- round-to-fn
@@ -127,18 +129,18 @@
    ["cos" mth/cos]
    ["tan" mth/tan]
    ["atan" #(Math/atan %)]
-   ["asin" #(Math/asin %) #(not (<= -1 % 1)) "between -1 and 1"]
-   ["acos" #(Math/acos %) #(not (<= -1 % 1)) "between -1 and 1"]
+   ["asin" #(Math/asin %) #(not (<= -1 % 1)) :between-minus-one-and-one]
+   ["acos" #(Math/acos %) #(not (<= -1 % 1)) :between-minus-one-and-one]
    ["sinh" #(Math/sinh %)]
    ["cosh" #(Math/cosh %)]
    ["tanh" #(Math/tanh %)]
    ["asinh" #(Math/log (+ % (Math/sqrt (+ (* % %) 1))))]
-   ["acosh" #(Math/log (+ % (Math/sqrt (- (* % %) 1)))) #(< % 1) "greater than or equal to 1"]
-   ["atanh" #(* 0.5 (Math/log (/ (+ 1 %) (- 1 %)))) #(or (<= % -1) (>= % 1)) "between -1 and 1 (exclusive)"]
-   ["ln" #(Math/log %) #(<= % 0) "positive"]
-   ["log10" #(Math/log10 %) #(<= % 0) "positive"]
-   ["log2" #(/ (Math/log %) (Math/log 2)) #(<= % 0) "positive"]
-   ["log1p" #(Math/log (+ 1 %)) #(< % -1) "greater than or equal to -1"]])
+   ["acosh" #(Math/log (+ % (Math/sqrt (- (* % %) 1)))) #(< % 1) :at-least-one]
+   ["atanh" #(* 0.5 (Math/log (/ (+ 1 %) (- 1 %)))) #(or (<= % -1) (>= % 1)) :between-minus-one-and-one-exclusive]
+   ["ln" #(Math/log %) #(<= % 0) :positive]
+   ["log10" #(Math/log10 %) #(<= % 0) :positive]
+   ["log2" #(/ (Math/log %) (Math/log 2)) #(<= % 0) :positive]
+   ["log1p" #(Math/log (+ 1 %)) #(< % -1) :at-least-minus-one]])
 
 (def math-functions
   "Built in math functions keyed by lower case name. Each takes the
@@ -163,7 +165,7 @@
 (defn- parse-int-fn
   [[str-sym base-sym]]
   (when-not (sym/string? str-sym)
-    (expects-type "parse_int" "string" "first"))
+    (expects-type "parse_int" "string" 1))
   (let [base (if (sym/number? base-sym) (sym/value base-sym) 10)
         parsed (u/parse-int (sym/value str-sym) base)]
     (when (nil? parsed)
@@ -191,19 +193,19 @@
   (let [[start end]
         (if (= 1 (count args))
           (let [[a] args]
-            (when-not (sym/number? a) (expects-type "range" "Number" "first"))
+            (when-not (sym/number? a) (expects-type "range" "Number" 1))
             (let [v (sym/value a)]
               (when-not (and (u/integer-value? v) (<= 0 v 1000000))
-                (out-of-range "range" (str "count must be a non-negative integer <= 1000000, got " (u/num->str v))))
+                (out-of-range "range" :count {:value v :limit 1000000}))
               [0 v]))
           (let [[a b] args]
-            (when-not (sym/number? a) (expects-type "range" "Number" "first"))
-            (when-not (sym/number? b) (expects-type "range" "Number" "second"))
+            (when-not (sym/number? a) (expects-type "range" "Number" 1))
+            (when-not (sym/number? b) (expects-type "range" "Number" 2))
             (let [sv (sym/value a) ev (sym/value b)]
               (when-not (and (u/integer-value? sv) (u/integer-value? ev))
-                (out-of-range "range" (str "arguments must be integers, got " (u/num->str sv) " and " (u/num->str ev))))
+                (out-of-range "range" :integers {:values [sv ev]}))
               (when (> (- ev sv) 1000000)
-                (out-of-range "range" (str "size exceeds limit (1000000), got " (u/num->str (- ev sv)))))
+                (out-of-range "range" :size {:value (- ev sv) :limit 1000000}))
               [sv ev])))]
     (if (< end start)
       (sym/list [] false)
@@ -236,7 +238,7 @@
                    (string? (:keyword spec))
                    (string? (get-in spec [:script :script])))
       (err/raise :config/invalid-specification
-                 {:data {:kind "function" :uri uri :error "expected a map with :name, :keyword and :script"}}))
+                 {:data {:kind "function" :uri uri :reason :invalid-shape}}))
     spec))
 
 (defn- register-spec

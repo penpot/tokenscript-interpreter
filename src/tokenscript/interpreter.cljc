@@ -120,22 +120,18 @@
             v (if (string? result) result (some-> result sym/value))]
         (sym/color v (:name target-spec) nil)))))
 
-(defn- no-conversion-path
-  [source-uri target-uri]
-  (str "No conversion path found from '" source-uri "' to '" target-uri "'"))
-
 (defn- convert-color*
   [config color target-uri]
   (let [registry (:colors config)
         source-uri (or (when-let [sub (:sub-type color)] (reg/uri-by-name registry sub))
                        (err/raise :color/source-uri-not-found {:data {:color-type (or (:sub-type color) "unknown")}}))
         steps (or (reg/conversion-steps registry source-uri target-uri)
-                  (err/raise :color/conversion-error {:data {:error (no-conversion-path source-uri target-uri)}}))]
+                  (err/raise :color/conversion-error {:data {:source-uri source-uri :target-uri target-uri}}))]
     (try
       (-> (reduce (fn [c step] (run-color-conversion config step c)) color steps)
           (assoc :alpha (:alpha color)))
       (catch #?(:clj Throwable :cljs :default) e
-        (err/raise :color/conversion-error {:data {:error (err/describe e)}})))))
+        (err/raise :color/conversion-error {:data (err/cause-data e)})))))
 
 ;; A conversion only depends on the config, the color and the target, and
 ;; token sets convert the same colors again and again: a palette color for
@@ -197,7 +193,7 @@
     (if (sym/number-with-unit? result)
       result
       (err/raise :unit/conversion-crashed
-                 {:data {:error "Unit conversion function must return a NumberWithUnitSymbol"}}))))
+                 {:data {:result-type (sym/result-type-name result)}}))))
 
 (defn convert-unit
   "Converts a number with unit to the unit registered under `target-uri`."
@@ -206,11 +202,11 @@
         source-uri (or (units/uri-by-keyword registry (:unit unit))
                        (err/raise :unit/source-uri-not-found {:data {:unit (:unit unit)}}))
         steps (or (reg/conversion-steps registry source-uri target-uri)
-                  (err/raise :unit/conversion-crashed {:data {:error (no-conversion-path source-uri target-uri)}}))]
+                  (err/raise :unit/conversion-crashed {:data {:source-uri source-uri :target-uri target-uri}}))]
     (try
       (reduce (fn [u step] (run-unit-conversion config step u)) unit steps)
       (catch #?(:clj Throwable :cljs :default) e
-        (err/raise :unit/conversion-crashed {:data {:error (err/describe e)}})))))
+        (err/raise :unit/conversion-crashed {:data (err/cause-data e)})))))
 
 (defn- relative-unit?
   [config s]
@@ -297,7 +293,7 @@
                           (convert-to-common-format config (vec args))
                           (catch #?(:clj Throwable :cljs :default) e
                             (err/raise :functions/unit-conversion-failed
-                                       {:data {:function-name "sum" :error (err/describe e)}})))
+                                       {:data (assoc (err/cause-data e) :function-name "sum")})))
               total (reduce + 0.0 (map sym/value converted))]
           (if-let [unit-arg (first (filter sym/number-with-unit? converted))]
             (sym/number-with-unit total (:unit unit-arg))
@@ -312,7 +308,7 @@
         (string? result) (sym/string result)
         :else result))
     (catch #?(:clj Throwable :cljs :default) e
-      (err/raise :functions/execution-error {:data {:function-name keyword :error (err/describe e)}}))))
+      (err/raise :functions/execution-error {:data (assoc (err/cause-data e) :function-name keyword)}))))
 
 (defn resolve-function
   "Callable for `name`: dynamic functions first, then built ins.

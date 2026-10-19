@@ -6,7 +6,6 @@
 
 (ns tokenscript.processor-test
   (:require
-   [clojure.string :as str]
    [clojure.test :as t]
    [clojure.test.check :as tc]
    [clojure.test.check.generators :as gen]
@@ -70,8 +69,7 @@
     (t/is (= :processor/token-not-found (get-in res [:issues "miss" 0 :data :cause :code])))
     (t/is (= ["miss2" "miss" "nope"] (get-in res [:issues "miss2" 0 :data :chain])) "chains accumulate")
     (t/is (= :processor/token-not-found (get-in res [:issues "miss2" 0 :data :cause :code])) "the root cause is kept")
-    (t/is (= "Token 'miss2' failed due to dependency error: miss2 → miss → nope\nRoot cause: Token 'nope' not found"
-             (get-in res [:issues "miss2" 0 :message])))
+    (t/is (= #{:type :kind :code :data} (set (keys (get-in res [:issues "miss2" 0])))) "issues carry no messages")
     (t/is (not (contains? (:resolved res) "nope")) "missing tokens are not invented")
     (t/is (= #{"miss" "miss2"} (proc/broken-references res)))
     (t/is (err/error-map? (proc/token-error res "bad")))
@@ -134,7 +132,7 @@
         (t/is (= ["blur"] (:path field-issue)))
         (t/is (= :processor/dependency-error (:code field-issue)))
         (t/is (err/error-map? field-issue))
-        (t/is (str/starts-with? (:hint field-issue) "Error at blur: "))
+        (t/is (= :processor/token-not-found (get-in field-issue [:data :cause :code])))
         (t/is (= :processor/dependency-error (:code parent-issue)))))))
 
 (t/deftest object-parsers-test

@@ -58,6 +58,6 @@ Anything else is used from the implementation namespaces directly.
 | `.schemas` | The bundled schemas, read from `resources/tokenscript/schemas`. |
 | `.processor`, `.token-data` | The resolver: token sets, dependency resolution, structured tokens, incremental updates. |
 | `.validation` | Validation of resolved values against token type schemas. |
-| `.errors` | Error codes, messages and error maps. |
+| `.errors` | Error codes and error maps. |
 | `.util` | JavaScript compatible number formatting and string handling, and case insensitive name tables. |
 | `.math` | Host math on doubles, the same results on the JVM and in JS. |
