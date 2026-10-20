@@ -64,6 +64,11 @@
         (:code (ex-data e))
         (throw e)))))
 
+(defn set-tokens
+  "The tokens of the set `set-name` of a read document."
+  [document set-name]
+  (->> (:sets document) (filter #(= set-name (:name %))) first :tokens))
+
 (defn ev-error
   "Error code raised by evaluating `text`."
   ([text] (ev-error text nil))

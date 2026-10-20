@@ -51,6 +51,7 @@ See [docs/](docs/README.md):
 - [Token validation](docs/validation.md)
 - [Resolver](docs/resolver.md)
 - [Errors and issues](docs/errors.md)
+- [Token files](docs/dtcg.md)
 - [Testing](docs/testing.md)
 
 ## Development
