@@ -13,7 +13,7 @@ language (Penpot maps them to its translated token errors).
 
 ```clojure
 {:type    :tokenscript/error
- :kind    :interpreter              ; :lexer, :parser, :interpreter or :processor
+ :kind    :interpreter              ; :lexer, :parser, :interpreter, :processor or :dtcg
  :code    :interpreter/unknown-reference
  :data    {:reference "x"}          ; depends on the code
  :line    1
@@ -22,7 +22,8 @@ language (Penpot maps them to its translated token errors).
 
 The namespace of the code is the area that raised it: `lexer`,
 `parser`, `interpreter`, `operations`, `symbols`, `functions`,
-`config`, `processor`, `color` or `unit`. The message of the thrown
+`config`, `processor`, `color`, `unit` or `dtcg` (token files, see
+[Token files](dtcg.md#issues)). The message of the thrown
 `ex-info` is the identifier the other tokenscript implementations use
 for the code: `:interpreter/unknown-reference` is
 `INT_UNKNOWN_REFERENCE`.

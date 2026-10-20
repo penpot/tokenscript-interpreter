@@ -18,6 +18,7 @@ It is a port of the TypeScript reference implementation
 - [Token validation](validation.md) — token type schemas and their validation scripts
 - [Resolver](resolver.md) — resolving token sets, incremental updates and previews
 - [Errors and issues](errors.md) — error maps, error codes and the issues of a token
+- [Token files](dtcg.md) — reading and writing DTCG and Tokens Studio files
 - [Testing](testing.md) — the test tasks and the language tests
 
 ## Usage
@@ -58,6 +59,7 @@ Anything else is used from the implementation namespaces directly.
 | `.schemas` | The bundled schemas, read from `resources/tokenscript/schemas`. |
 | `.processor`, `.token-data` | The resolver: token sets, dependency resolution, structured tokens, incremental updates. |
 | `.validation` | Validation of resolved values against token type schemas. |
+| `.dtcg`, `.dtcg.values` | Reading and writing token files: DTCG, Tokens Studio's legacy and multi-set files. |
 | `.errors` | Error codes and error maps. |
 | `.util` | JavaScript compatible number formatting and string handling, and case insensitive name tables. |
 | `.math` | Host math on doubles, the same results on the JVM and in JS. |
