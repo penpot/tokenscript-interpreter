@@ -40,7 +40,8 @@
    "config" "CFG"
    "processor" "PROC"
    "color" "COLOR"
-   "unit" "UNIT"})
+   "unit" "UNIT"
+   "dtcg" "DTCG"})
 
 (defn- code->kind
   "Maps an error code to the error kind (the TS error class)."
@@ -49,6 +50,7 @@
     "lexer" :lexer
     "parser" :parser
     "processor" :processor
+    "dtcg" :dtcg
     :interpreter))
 
 (defn- code->string
