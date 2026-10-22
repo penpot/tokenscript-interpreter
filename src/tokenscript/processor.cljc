@@ -128,6 +128,7 @@
                   parsers
                   sets               ; [[set-key {name token-data}]], later sets win
                   tokens             ; name -> token data of the winning set
+                  collisions         ; name below a token -> that token, see `split-collisions`
                   constants          ; `u/name-key` -> symbol
                   mutable-constants? ; constants are copied per evaluation, see `constants-table`
                   parsed             ; name -> {:ast :deps}
@@ -146,13 +147,14 @@
                   cycle-root])
 
 (defn- initial-state
-  [sets tokens cfg parsers]
+  [sets tokens collisions cfg parsers]
   (let [constants (constant-symbols cfg)]
     (map->State
      {:config cfg
       :parsers parsers
       :sets sets
       :tokens tokens
+      :collisions collisions
       :constants constants
       ;; checked once per build instead of per token
       :mutable-constants? (boolean (some mutable-symbol? (vals constants)))
@@ -256,6 +258,17 @@
     (if (and (pos? end) (= "." (subs s (dec end) end)))
       (recur (dec end))
       (subs s 0 end))))
+
+(defn- parent-name
+  "Longest of the `prefixes-of` `name` for which `defined?` is true."
+  [defined? name]
+  (let [trimmed (trim-trailing-dots name)]
+    (loop [dot (str/last-index-of trimmed ".")]
+      (when dot
+        (let [prefix (subs name 0 dot)]
+          (if (defined? prefix)
+            prefix
+            (recur (when (pos? dot) (str/last-index-of trimmed "." (dec dot))))))))))
 
 (defn- index-prefixes
   "Builds `:prefixes` (prefix -> member tokens) and `:direct-children`
@@ -405,7 +418,7 @@
 (defn- parent-token
   "Longest token name that is a dot prefix of `path`."
   [st path]
-  (some #(when (token? st %) %) (reverse (prefixes-of path))))
+  (parent-name #(token? st %) path))
 
 (defn- resolve-until-cycle
   "Resolves the names of `items` (`name-of` each) in order, stopping when
@@ -619,49 +632,6 @@
     {:tokens affected
      :subgraph (into {} (map (fn [t] [t (set (filter affected (get graph t #{})))])) affected)}))
 
-;; Building -------------------------------------------------------------------
-
-(defn- select-names
-  "`select-keys` for many keys."
-  [m names]
-  (persistent!
-   (reduce (fn [acc name]
-             (if-let [entry (find m name)]
-               (assoc! acc name (val entry))
-               acc))
-           (transient {})
-           names)))
-
-(defn- result
-  [st]
-  (let [tokens (:tokens st)
-        names (keys tokens)
-        resolved (:resolved st)
-        issues (select-names (:issues st) names)
-        no-sub-fields? (empty? (:sub-fields st))
-        ;; Without composite sub-fields or failed virtual children the
-        ;; resolved map holds exactly the input names and is reused.
-        exact? (and no-sub-fields?
-                    (= (count resolved) (count tokens))
-                    (every? #(contains? tokens %) (keys resolved)))]
-    {:tokens (if exact?
-               (reduce-kv (fn [acc name v]
-                            (if (err/error-map? v)
-                              (assoc acc name (get-in tokens [name :value]))
-                              acc))
-                          resolved
-                          resolved)
-               (persistent!
-                (reduce (fn [acc name]
-                          (let [v (get resolved name)]
-                            (assoc! acc name (if (err/error-map? v) (get-in tokens [name :value]) v))))
-                        (transient {})
-                        names)))
-     :resolved (if exact? resolved (select-names resolved names))
-     :issues (when (seq issues) issues)
-     :graph (if no-sub-fields? (:graph st) (select-names (:graph st) names))
-     :state st}))
-
 ;; Sets -----------------------------------------------------------------------
 ;;
 ;; The input is an ordered vector of sets, `[[set-key tokens] ..]`; a name
@@ -694,11 +664,97 @@
   (when-let [i (source-index sets name)]
     (get-in sets [i 1 name])))
 
+;; Name collisions ------------------------------------------------------------
+;;
+;; A token is a leaf of the token tree: no token can be named below it.
+;; With a token `a`, a token `a.b` (and `a.b.c`) collides with it. A
+;; colliding token is left out of `:tokens` and resolution, so `{a.b}`
+;; is a key of `a` as without it, and the result reports it with a
+;; `:processor/token-name-collision` issue. Which of the two tokens
+;; collides does not depend on the order of the sets.
+
+(defn- split-collisions
+  "`[tokens collisions]` for the token data `tokens`: the tokens without
+  the names below another token, and those names mapped to the token
+  they are below."
+  [tokens]
+  (reduce-kv (fn [[kept collisions :as acc] name _]
+               (if-let [parent (parent-name #(contains? tokens %) name)]
+                 [(dissoc kept name) (assoc collisions name parent)]
+                 acc))
+             [tokens {}]
+             tokens))
+
+(defn- names-below
+  "The names of `candidates` that have a dot prefix in the set `names`."
+  [names candidates]
+  (filter (fn [name] (some names (prefixes-of name))) candidates))
+
+(defn- collision-error
+  [name parent]
+  (err/error-map :processor/token-name-collision {:data {:token-name name :parent parent}}))
+
+(defn- add-collisions
+  "Build result `res` with the colliding tokens of `st`: their original
+  value and their collision error."
+  [res {:keys [sets collisions]}]
+  (reduce-kv (fn [res name parent]
+               (let [error (collision-error name parent)]
+                 (-> res
+                     (update :tokens assoc name (:value (winner sets name)))
+                     (update :resolved assoc name error)
+                     (update :issues assoc name [error]))))
+             res
+             collisions))
+
 ;; Building -------------------------------------------------------------------
+
+(defn- select-names
+  "`select-keys` for many keys."
+  [m names]
+  (persistent!
+   (reduce (fn [acc name]
+             (if-let [entry (find m name)]
+               (assoc! acc name (val entry))
+               acc))
+           (transient {})
+           names)))
+
+(defn- result
+  [st]
+  (let [tokens (:tokens st)
+        names (keys tokens)
+        resolved (:resolved st)
+        issues (select-names (:issues st) names)
+        no-sub-fields? (empty? (:sub-fields st))
+        ;; Without composite sub-fields or failed virtual children the
+        ;; resolved map holds exactly the input names and is reused.
+        exact? (and no-sub-fields?
+                    (= (count resolved) (count tokens))
+                    (every? #(contains? tokens %) (keys resolved)))]
+    (-> {:tokens (if exact?
+                   (reduce-kv (fn [acc name v]
+                                (if (err/error-map? v)
+                                  (assoc acc name (get-in tokens [name :value]))
+                                  acc))
+                              resolved
+                              resolved)
+                   (persistent!
+                    (reduce (fn [acc name]
+                              (let [v (get resolved name)]
+                                (assoc! acc name (if (err/error-map? v) (get-in tokens [name :value]) v))))
+                            (transient {})
+                            names)))
+         :resolved (if exact? resolved (select-names resolved names))
+         :issues (when (seq issues) issues)
+         :graph (if no-sub-fields? (:graph st) (select-names (:graph st) names))
+         :state st}
+        (cond-> (seq (:collisions st)) (add-collisions st)))))
 
 (defn- run
   [sets cfg parsers]
-  (let [st (parse-all (initial-state sets (merge-sets sets) cfg parsers))
+  (let [[tokens collisions] (split-collisions (merge-sets sets))
+        st (parse-all (initial-state sets tokens collisions cfg parsers))
         graph (:graph st)]
     (-> st
         (assoc :reverse (delay (reverse-graph graph)))
@@ -788,13 +844,17 @@
           st
           (cons name (field-names st name))))
 
+(defn- parse-name
+  "Parses `name` from its current token data, after `remove-node`."
+  [st name]
+  (if-let [data (get (:tokens st) name)]
+    (-> st (parse-token name data) (add-edges name))
+    st))
+
 (defn- reparse
   "Parses `name` again from its current token data."
   [st name]
-  (let [st (remove-node st name)]
-    (if-let [data (get (:tokens st) name)]
-      (-> st (parse-token name data) (add-edges name))
-      st)))
+  (parse-name (remove-node st name) name))
 
 (defn- keys-below
   "Reverse graph keys that are neither tokens nor fields (groups, keys of
@@ -849,9 +909,15 @@
     (assoc st :tokens tokens)
     (let [st (-> (drop-derived st)
                  (assoc :reverse (reverse-index st)))
-          parsed-before (filterv #(contains? (:parsed st) %) changed)
+          parsed-tokens #(filterv (fn [name] (and (token? % name) (contains? (:parsed %) name))) changed)
+          parsed-before (parsed-tokens st)
           old-fields (mapcat #(field-names st %) changed)
-          st (reduce reparse (assoc st :tokens tokens) changed)
+          ;; Everything is removed before anything is parsed: a changed
+          ;; name can be a field of another one, `s.blur` of `s` when the
+          ;; token `s.blur` collides with a new `s`.
+          st (as-> (assoc st :tokens tokens) st
+               (reduce remove-node st changed)
+               (reduce parse-name st changed))
           dirty (dirty-names st (concat changed old-fields (mapcat #(field-names st %) changed)))
           changed? (set changed)
           ;; Structured tokens are parsed again to get fresh fields
@@ -859,24 +925,39 @@
           st (reduce reparse st restructured)
           fresh (into changed? (concat restructured (mapcat #(field-names st %) restructured)))
           st (reduce reset-name st (filter #(and (contains? (:parsed st) %) (token? st %) (not (fresh %))) dirty))
-          membership-changed? (not= parsed-before (filterv #(contains? (:parsed st) %) changed))]
+          membership-changed? (not= parsed-before (parsed-tokens st))]
       (-> (cond-> st
             membership-changed? (assoc :prefixes nil :direct-children nil))
           (as-> st (reduce resolve-name st (sort dirty)))))))
 
+(defn- defined?
+  "Whether the sets of `st` define `name`, colliding or not."
+  [st name]
+  (or (contains? (:tokens st) name) (contains? (:collisions st) name)))
+
 (defn- change
   "`[state changed?]` for `sets` in which the data of `names` may have
-  changed."
+  changed. A name that appears or disappears can make the names below it
+  collide or stop colliding, so they are looked at too."
   [st sets names]
   (let [old (:tokens st)
-        tokens (reduce (fn [tokens name]
-                         (if-let [data (winner sets name)]
-                           (assoc tokens name data)
-                           (dissoc tokens name)))
-                       old
-                       names)
+        in-sets? #(some? (source-index sets %))
+        appeared (into #{} (filter #(not= (defined? st %) (in-sets? %))) names)
+        names (if (seq appeared)
+                (distinct (concat names (names-below appeared (concat (keys old) (keys (:collisions st))))))
+                names)
+        [tokens collisions]
+        (reduce (fn [[tokens collisions] name]
+                  (let [data (winner sets name)
+                        parent (when data (parent-name in-sets? name))]
+                    (cond
+                      (nil? data) [(dissoc tokens name) (dissoc collisions name)]
+                      parent [(dissoc tokens name) (assoc collisions name parent)]
+                      :else [(assoc tokens name data) (dissoc collisions name)])))
+                [old (:collisions st)]
+                names)
         changed (filterv #(not= (get old %) (get tokens %)) names)]
-    [(apply-changes (assoc st :sets sets) tokens changed) (seq changed)]))
+    [(apply-changes (assoc st :sets sets :collisions collisions) tokens changed) (seq changed)]))
 
 (defn- dependents-graph
   "Dependency graph between `name` and the tokens transitively depending
@@ -893,7 +974,7 @@
 
 (defn- ensure-token
   [st name]
-  (when-not (contains? (:tokens st) name)
+  (when-not (defined? st name)
     (err/raise :processor/token-not-found {:data {:token-name name}})))
 
 (defn create-token
@@ -955,7 +1036,7 @@
      (if (= name new-name)
        (assoc (result st) :dependents (dependents-graph st name))
        (do
-         (when (contains? (:tokens st) new-name)
+         (when (defined? st new-name)
            (err/raise :processor/token-already-exists {:data {:token-name new-name}}))
          (let [sets (cond-> sets
                       update-references? (as-> sets (rename-references st sets name new-name))
@@ -995,7 +1076,7 @@
         tokens (merge-sets sets)
         changed (-> []
                     (into (remove #(identical? (get tokens %) (get old %))) (keys tokens))
-                    (into (remove #(contains? tokens %)) (keys old)))
+                    (into (remove #(contains? tokens %)) (concat (keys old) (keys (:collisions st)))))
         [st _] (change st sets changed)]
     (result st)))
 
@@ -1035,7 +1116,7 @@
 (defn metadata
   "`:metadata` of the token data `name` is taken from."
   [res name]
-  (get-in res [:state :tokens name :metadata]))
+  (:metadata (winner (get-in res [:state :sets]) name)))
 
 (defn affected-tokens
   "Token names in the `:dependents` graph of an operation result."

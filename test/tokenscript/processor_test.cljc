@@ -147,6 +147,28 @@
     (t/is (= "1" (value res "bad name")) "the token still resolves")
     (t/is (nil? (get-in res [:issues "ok.name"])))))
 
+(t/deftest token-name-collision-test
+  (let [res (process {"a" "25" "a.b" "23" "a.b.c" "1" "ref" "{a.b}"
+                      "s" {:value {:blur "{x}"} :type "shadow"} "s.blur" "13px" "x" "4px" "blur" "{s.blur}"})]
+    (t/is (= "25" (value res "a")) "the token above stays valid")
+    (t/is (nil? (get-in res [:issues "a"])))
+    (t/is (= [:processor/token-name-collision] (codes res "a.b")))
+    (t/is (= {:token-name "a.b" :parent "a"} (get-in res [:issues "a.b" 0 :data])))
+    (t/is (= "23" (value res "a.b")) "a colliding token keeps its original value")
+    (t/is (= {:token-name "a.b.c" :parent "a.b"} (get-in res [:issues "a.b.c" 0 :data]))
+          "names below a colliding token collide with it too")
+    (t/is (= :processor/token-not-found (get-in res [:issues "ref" 0 :data :cause :code]))
+          "references to a colliding token are keys of the token above")
+    (t/is (= "4px" (value res "blur")) "a colliding token does not replace a field")
+    (t/is (= [:processor/token-name-collision] (codes res "s.blur")))
+    (t/is (nil? (get-in res [:issues "s"]))))
+  (t/testing "the order of the sets does not matter"
+    (doseq [sets [[[:first {"a" "25"}] [:second {"a.b" "23"}]]
+                  [[:first {"a.b" "23"}] [:second {"a" "25"}]]]]
+      (let [res (proc/build sets {:config (h/core-config)})]
+        (t/is (nil? (get-in res [:issues "a"])))
+        (t/is (= [:processor/token-name-collision] (codes res "a.b")))))))
+
 (t/deftest inline-constants-test
   (let [res (process {"a" "red" "b" "{a}" "c" "lighten({b}, 0.1)"} (h/full-config))]
     (t/is (= "#FF0000" (value res "a")) "css color names come from the bundled constants")
@@ -274,6 +296,44 @@
         (t/is (= [:processor/dependency-error] (codes none "color.bg")))
         (t/is (same-as-build? none))))))
 
+(t/deftest incremental-collisions-test
+  (let [res (process {"a.b" "1" "a.c.d" "2" "ref" "{a.b} + 1"
+                      "s.blur" "13px" "blur" "{s.blur}"})
+        st (:state res)]
+    (t/testing "creating a token makes the names below it collide"
+      (let [cr (proc/create-token st "a" {:value "5"})]
+        (t/is (= [:processor/token-name-collision] (codes cr "a.b")))
+        (t/is (= {:token-name "a.c.d" :parent "a"} (get-in cr [:issues "a.c.d" 0 :data])))
+        (t/is (= [:processor/dependency-error] (codes cr "ref")))
+        (t/is (same-as-build? cr))
+        (t/testing "and deleting it makes them tokens again"
+          (let [del (proc/delete-token (:state cr) "a")]
+            (t/is (nil? (:issues del)))
+            (t/is (= "2" (value del "ref")))
+            (t/is (same-as-build? del))))
+        (t/testing "colliding tokens can be renamed and deleted"
+          (let [rn (proc/rename-token (:state cr) "a.b" "b")]
+            (t/is (= "1" (value rn "b")))
+            (t/is (same-as-build? rn)))
+          (let [del (proc/delete-token (:state cr) "a.c.d")]
+            (t/is (not (contains? (:tokens del) "a.c.d")))
+            (t/is (same-as-build? del))))))
+    (t/testing "a new structured token takes its fields from the colliding names"
+      (let [cr (proc/create-token st "s" {:value {:blur "4px"} :type "shadow"})]
+        (t/is (= [:processor/token-name-collision] (codes cr "s.blur")))
+        (t/is (= "4px" (value cr "blur")))
+        (t/is (same-as-build? cr))
+        (let [del (proc/delete-token (:state cr) "s")]
+          (t/is (= "13px" (value del "blur")))
+          (t/is (same-as-build? del)))))
+    (t/testing "a theme switch can add and remove the token above"
+      (let [on (proc/set-sets st [[:core (get-in st [:sets 0 1])] [:dark {"a" "5"}]])
+            off (proc/set-sets (:state on) [[:core (get-in st [:sets 0 1])]])]
+        (t/is (= [:processor/token-name-collision] (codes on "a.b")))
+        (t/is (same-as-build? on))
+        (t/is (nil? (:issues off)))
+        (t/is (same-as-build? off))))))
+
 (t/deftest incremental-references-test
   (let [res (process {"color.primary" "#FF0000"
                       "group" "{color}"
@@ -324,7 +384,7 @@
             ops)))
 
 (def ^:private prop-names
-  ["a" "b" "c" "g.x" "g.y" "d" "dict" "bad name"])
+  ["a" "b" "c" "g.x" "g.y" "d" "dict" "bad name" "g" "a.x" "d.p"])
 
 (def ^:private prop-values
   (into ["1" "2" 3 nil "" "1 +" "uppercase" "{g}" "{dict.x}" "{d.p}"
