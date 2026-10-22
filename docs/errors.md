@@ -79,6 +79,10 @@ cause, so callers can match the root cause's code:
  ...}
 ```
 
+`:processor/token-name-collision` is the error of a token named below
+another token: `:token-name` is the token and `:parent` the longest
+token name above it (`{:token-name "a.b" :parent "a"}`).
+
 `:processor/circular-dependency` names the token in `:tokens`. An
 error in a field of a structured token is stored on the token with the
 field as `:path`.

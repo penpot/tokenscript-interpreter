@@ -78,6 +78,12 @@ A token name is a dot separated path whose segments contain no
 whitespace, braces or brackets. Other names get
 `:processor/invalid-token-name` and are still resolved.
 
+A token cannot contain tokens: next to a token `a`, a token `a.b` (or
+`a.b.c`) gets `:processor/token-name-collision`, whatever the order of
+their sets. A colliding token keeps its original value in `:tokens` and
+is not resolved, so `{a.b}` is a key of `a` as if it did not exist, and
+it cannot replace a field of a structured token (`{shadow.blur}`).
+
 ### References
 
 | Reference | Value |
@@ -135,7 +141,9 @@ re-resolves only what can observe them: the tokens referencing them,
 directly or through a group (`{color}`) or a key of a dictionary token
 (`{theme.dark}`), found through the reverse dependency graph the state
 keeps. A missing token is in that graph too, so creating it fixes the
-tokens waiting for it. Every other value is kept.
+tokens waiting for it. Creating or deleting a token also re-checks the
+tokens below it for [name collisions](#resolution). Every other value is
+kept.
 
 `affected-tokens`, `modified-dependents`, `broken-references`,
 `tokens-with-issues`, `token-error`, `errors` and `issue-with-code?`
