@@ -86,3 +86,7 @@ field as `:path`.
 A [token reader](resolver.md#token-reader) can fail a token with an
 error map of its own code; the tokens referencing it get
 `:processor/dependency-error` with that error as the `:cause`.
+
+`rename-token` raises `:processor/token-not-updatable` when it would
+[rewrite the references](resolver.md#renaming) in token data read by a
+`:token-reader` of the caller; `:token-name` names that token.
