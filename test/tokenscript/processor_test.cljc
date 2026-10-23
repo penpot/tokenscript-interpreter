@@ -189,7 +189,7 @@
 
 (t/deftest rename-token-test
   (let [res (process {"a" "10" "b" "{a} + 5"})
-        rn (proc/rename-token (:state res) "a" "alpha" {:update-references? true})]
+        rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
     (t/is (= "{alpha} + 5" (get-in rn [:state :tokens "b"])) "the data is rewritten in the shape it was given")
     (t/is (= "{alpha} + 5" (get-in rn [:state :data "b" :value])))
     (t/is (= "15" (value rn "b")))
@@ -201,7 +201,115 @@
       (t/is (= #{"b"} (proc/broken-references rn)))))
   (let [st (:state (process {"a" "1" "b" "2"}))]
     (t/is (= :processor/token-already-exists (h/error-code #(proc/rename-token st "a" "b"))))
-    (t/is (= :processor/token-not-found (h/error-code #(proc/rename-token st "x" "y"))))))
+    (t/is (= :processor/token-not-found (h/error-code #(proc/rename-token st "x" "y")))))
+  (t/testing "a token whose data is nil"
+    (let [rn (proc/rename-token (:state (process {"a" nil "b" "1"})) "a" "alpha")]
+      (t/is (contains? (get-in rn [:state :tokens]) "alpha"))
+      (t/is (sym/null? (get-in rn [:tokens "alpha"]))))))
+
+
+(defn- build-sets
+  [sets]
+  (proc/build sets {:config (h/core-config)}))
+
+(t/deftest rename-token-data-test
+  (t/testing "DTCG data keeps its keys"
+    (let [res (process {"a" {"$value" "10"} "b" {"$value" "{a} + 5" "$type" "number"}})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= {"$value" "{alpha} + 5" "$type" "number"} (proc/input rn "b")))
+      (t/is (= {"$value" "10"} (proc/input rn "alpha")))
+      (t/is (= "15" (value rn "b")))))
+  (t/testing "normalized data keeps its other fields"
+    (let [res (process {"a" {:value "10"} "b" {:value "{a} + 5" :type "number" :metadata 7}})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= {:value "{alpha} + 5" :type "number" :metadata 7} (proc/input rn "b")))))
+  (t/testing "a caller's records"
+    (let [reader (fn [{:keys [val]}] {:value val})
+          records {"a" {:name "a" :val "10" :id 1}
+                   "b" {:name "b" :val "{a} + 5" :id 2}
+                   "c" {:name "c" :val "{b} * 2" :id 3}}
+          st (:state (proc/build records {:config (h/core-config) :token-reader reader}))
+          e (try (proc/rename-token st "a" "alpha" {:update-references :visible})
+                 nil
+                 (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+      (t/testing "can not be rewritten"
+        (t/is (= :processor/token-not-updatable (:code e)))
+        (t/is (= {:token-name "b"} (:data e))))
+      (t/testing "get the rewritten values to write themselves"
+        (t/is (= {[nil "b"] "{alpha} + 5"} (proc/reference-updates st "a" "alpha"))))
+      (t/testing "are moved as they are without reference updates"
+        (let [rn (proc/rename-token st "a" "alpha")]
+          (t/is (identical? (get records "a") (proc/input rn "alpha")))
+          (t/is (= #{"b" "c"} (proc/broken-references rn))))))))
+
+;; A rename in the set a token is taken from lets a definition it shadowed
+;; through, and rewrites the references to the visible token only.
+(t/deftest rename-token-sets-test
+  (t/testing "a shadowed definition becomes visible"
+    (let [res (build-sets [[:a {"token-foo" "#ff0000"}] [:b {"token-foo" "#0000ff"}]])
+          rn (proc/rename-token (:state res) "token-foo" "token-bar")]
+      (t/is (= "#ff0000" (value rn "token-foo")))
+      (t/is (= "#0000ff" (value rn "token-bar")))
+      (t/is (= :a (proc/source rn "token-foo")))
+      (t/is (= :b (proc/source rn "token-bar")))))
+  (let [core {"a" "1" "b" "{a} * 10"}
+        theme {"a" "2" "b" "{a} + 1" "c" "{a} + 100"}
+        res (build-sets [[:core core] [:theme theme]])
+        data (fn [res set-key name] (get-in (into {} (get-in res [:state :sets])) [set-key name]))]
+    (t/testing ":visible rewrites the visible definitions"
+      (let [rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+        (t/is (= "{alpha} + 1" (data rn :theme "b")))
+        (t/is (= "{alpha} + 100" (data rn :theme "c")))
+        (t/is (= "{a} * 10" (data rn :core "b")) "a shadowed definition is kept")
+        (t/is (= "1" (value rn "a")))
+        (t/is (= "3" (value rn "b")))
+        (t/is (= "102" (value rn "c")))))
+    (t/testing ":all rewrites every definition"
+      (let [rn (proc/rename-token (:state res) "a" "alpha" {:update-references :all})]
+        (t/is (= "{alpha} * 10" (data rn :core "b")))
+        (t/is (= "{alpha} + 1" (data rn :theme "b")))
+        (t/is (= {[:core "b"] "{alpha} * 10" [:theme "b"] "{alpha} + 1" [:theme "c"] "{alpha} + 100"}
+                 (proc/reference-updates (:state res) "a" "alpha" {:update-references :all})))))
+    (t/testing "renaming a shadowed definition keeps the references to the visible one"
+      (let [rn (proc/rename-token (:state res) "a" "alpha" {:set :core :update-references :all})]
+        (t/is (= "{a} * 10" (data rn :core "b")))
+        (t/is (= "1" (value rn "alpha")))
+        (t/is (= "3" (value rn "b")))
+        (t/is (= "102" (value rn "c")))
+        (t/is (= {} (proc/reference-updates (:state res) "a" "alpha" {:set :core :update-references :all})))))))
+
+(t/deftest rename-token-references-test
+  (t/testing "in structured values"
+    (let [res (process {"a" "2" "typo" {:fontSize "{a} * 8" :lineHeight "{a}" :weight "400"}})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= {:fontSize "{alpha} * 8" :lineHeight "{alpha}" :weight "400"} (proc/input rn "typo")))
+      (t/is (nil? (:issues rn)))))
+  (t/testing "in vectors of structured values"
+    (let [res (process {"a" "2" "shadow" [{:blur "{a}"} {:blur "3"}]})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= [{:blur "{alpha}"} {:blur "3"}] (proc/input rn "shadow")))))
+  (t/testing "to a field of the renamed token"
+    (let [res (process {"typo" {:fontSize "16"} "size" "{typo.fontSize} * 2"})
+          rn (proc/rename-token (:state res) "typo" "heading" {:update-references :visible})]
+      (t/is (= "{heading.fontSize} * 2" (proc/input rn "size")))
+      (t/is (= "32" (value rn "size")))))
+  (t/testing "but not to a token below its name"
+    (let [res (process {"a" "1" "a.x" "2" "b" "{a} + {a.x}"})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= "{alpha} + {a.x}" (proc/input rn "b")))
+      (t/is (= "3" (value rn "b")))))
+  (t/testing "in the renamed token itself"
+    (let [res (process {"a" "{a}"})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= "{alpha}" (proc/input rn "alpha"))))))
+
+(t/deftest assoc-value-test
+  (t/is (= "{b}" (td/assoc-value "{a}" "{b}")))
+  (t/is (= {"$value" "{b}" "$type" "number"} (td/assoc-value {"$value" "{a}" "$type" "number"} "{b}")))
+  (t/is (= {:$value "{b}"} (td/assoc-value {:$value "{a}"} "{b}")))
+  (t/is (= {:value "{b}" "$value" "{a}"} (td/assoc-value {:value "{a}" "$value" "{a}"} "{b}"))
+        "the value is written where it is read")
+  (t/is (= {:p "{b}"} (td/assoc-value {:p "{a}"} {:p "{b}"})) "a structured value is replaced"))
 
 (t/deftest create-and-delete-token-test
   (let [res (process {"a" "10" "b" "{a} + 5"})
@@ -228,9 +336,6 @@
   (= (snapshot (proc/build (get-in res [:state :sets]) {:config (get-in res [:state :config])}))
      (snapshot res)))
 
-(defn- build-sets
-  [sets]
-  (proc/build sets {:config (h/core-config)}))
 
 (t/deftest sets-test
   (let [res (build-sets [[:core {"color.bg" {:value "#fff" :metadata {:id 1}}
@@ -409,7 +514,7 @@
                           :update (proc/update-token st name {:value arg})
                           :create (proc/create-token st name {:value arg})
                           :delete (proc/delete-token st name)
-                          :rename (proc/rename-token st name arg {:update-references? true}))]
+                          :rename (proc/rename-token st name arg {:update-references :visible}))]
                 (t/is (same-as-build? res) (str "after " op " " name))
                 (:state res)))
             start
@@ -443,7 +548,7 @@
         set-key (gen/elements [nil :core :dark])]
     (gen/one-of [(gen/tuple (gen/elements [:update :create]) token-name (gen/elements prop-values) set-key)
                  (gen/tuple (gen/elements [:delete]) token-name set-key)
-                 (gen/tuple (gen/elements [:rename]) token-name token-name gen/boolean)
+                 (gen/tuple (gen/elements [:rename]) token-name token-name (gen/elements [nil :visible :all]))
                  (gen/tuple (gen/elements [:sets]) gen-sets)
                  ;; an edit of the current sets, keeping the other set maps
                  ;; and token data as the same objects, or no edit
@@ -457,7 +562,7 @@
       :update (proc/update-token st a {:value b} (when c {:set c}))
       :create (proc/create-token st a {:value b} (when c {:set c}))
       :delete (proc/delete-token st a (when b {:set b}))
-      :rename (proc/rename-token st a b {:update-references? c})
+      :rename (proc/rename-token st a b {:update-references c})
       :sets (proc/set-sets st a)
       :edit (let [sets (:sets st)
                   i (mod a (count sets))]

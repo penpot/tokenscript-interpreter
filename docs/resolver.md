@@ -154,7 +154,7 @@ edit on the shared state and drop the result.
 |---|---|
 | `(create-token state name data opts)` | Adds a token, to the last set by default. Raises `:processor/token-already-exists` when that set has it. |
 | `(update-token state name data opts)` | Sets the data of a token, adding it when it does not exist. |
-| `(rename-token state name new-name opts)` | Renames a token. References to it break unless `:update-references? true` rewrites them. |
+| `(rename-token state name new-name opts)` | Renames a token. References to it break unless `:update-references` rewrites them, see [Renaming](#renaming). |
 | `(delete-token state name opts)` | Removes a token. Raises `:processor/token-not-found` when the set does not have it. |
 | `(set-sets state sets)` | Replaces the sets, for a theme switch, a toggled set or an edit. |
 
@@ -199,6 +199,50 @@ tokens waiting for it. Every other value is kept.
 `tokens-with-issues`, `token-error`, `errors` and `issue-with-code?`
 read a result. `input` returns the token data a name is taken from, as
 the caller gave it.
+
+## Renaming
+
+`rename-token` renames the definition in the `:set` of `opts`, by
+default the set the token is taken from. A definition of the old name in
+an earlier set, shadowed until then, becomes visible:
+
+```clojure
+(def state
+  (:state (ts/build [[:a {"token-foo" {:value "red"} "accent" {:value "{token-foo}"}}]
+                     [:b {"token-foo" {:value "blue"} "accent" {:value "{token-foo}"}}]])))
+
+(processor/tokens->strings (processor/rename-token state "token-foo" "token-bar"))
+;; => {"token-foo" "#FF0000", "token-bar" "#0000FF", "accent" "#FF0000"}
+```
+
+The references to the old name then resolve to that definition, or
+break when there is none, unless `:update-references` rewrites them:
+
+| `:update-references` | Rewrites the references in |
+|---|---|
+| `:visible` | The visible definition of every token. |
+| `:all` | Every definition of every set, also the shadowed ones. |
+
+References to a field or key of the token (`{typo.fontSize}`) are
+rewritten too, as are the string leaves of structured values, but not
+references to a token of its own below the name (`{a.x}` when renaming
+`a`). Renaming a shadowed definition rewrites nothing: the references
+are to the visible one.
+
+The token data is rewritten in its shape: a plain value stays plain and
+DTCG data keeps its `$value` key. Records read by a `:token-reader` of
+the caller cannot be rewritten by the resolver, and a rewrite raises
+`:processor/token-not-updatable`. `(processor/reference-updates state
+name new-name opts)` takes the same options and returns the rewritten
+values, as the reader returns them, by set key and token name:
+
+```clojure
+(processor/reference-updates state "token-foo" "token-bar" {:update-references :all})
+;; => {[:a "accent"] "{token-bar}", [:b "accent"] "{token-bar}"}
+```
+
+A caller keeping its own records writes them and the new name into its
+records, and passes its sets to `set-sets`.
 
 ## Previews
 

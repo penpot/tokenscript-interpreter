@@ -65,6 +65,15 @@
     :else
     {:value v}))
 
+(defn assoc-value
+  "Token input `v` with the value `value`, in the shape it was given: the
+  value is written where `normalize` reads it (`:value`, `\"$value\"`, ..),
+  and a plain value is replaced."
+  [v value]
+  (if (token-data? v)
+    (assoc v (some #(when (contains? v %) %) (field-keys "value")) value)
+    value))
+
 (defn string-keys
   "A map of token name to token data with string names. Returns `tokens`
   itself when its keys are strings already, so the data is kept as given."
