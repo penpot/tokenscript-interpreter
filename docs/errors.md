@@ -82,3 +82,11 @@ cause, so callers can match the root cause's code:
 `:processor/circular-dependency` names the token in `:tokens`. An
 error in a field of a structured token is stored on the token with the
 field as `:path`.
+
+A [token reader](resolver.md#token-reader) can fail a token with an
+error map of its own code; the tokens referencing it get
+`:processor/dependency-error` with that error as the `:cause`.
+
+`rename-token` raises `:processor/token-not-updatable` when it would
+[rewrite the references](resolver.md#renaming) in token data read by a
+`:token-reader` of the caller; `:token-name` names that token.

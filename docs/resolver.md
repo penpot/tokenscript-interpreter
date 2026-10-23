@@ -23,7 +23,51 @@ throws for a bad token: errors are stored as the token's
 
 `build` takes a map of token names to token data,
 `{:value .. :type .. :metadata ..}`; plain values and `$value` / `$type`
-keys work too. Its options are `:config` and `:object-parsers`.
+keys work too. Its options are `:config`, `:object-parsers`,
+`:token-reader` and `:token-writer`.
+
+### Token reader
+
+The token data is kept as the caller gives it. When a token is parsed,
+the `:token-reader` function turns its data into
+`{:value .. :type .. :metadata ..}`; the default reads the shapes above.
+A caller with its own token records passes them as they are and a reader
+for them, and the reader runs only for the tokens an operation parses:
+
+```clojure
+(ts/build {"spacing.base" {:val "8" :kind :number :id 1}}
+          {:token-reader (fn [{:keys [val kind id]}]
+                           {:value val :type (name kind) :metadata id})})
+```
+
+The [incremental operations](#incremental-updates) compare token data by
+identity first, so records that did not change are skipped without
+reading them. A reader can return an error map instead of data
+(`errors/error-map`): the token fails with that error and the tokens
+referencing it get `:processor/dependency-error`. A `:tokens` entry of
+such a token is nil.
+
+### Token writer
+
+The `:token-writer` is the reverse: a function of a token's data as
+given, its `:tokens` entry and its issues (nil when clean) that returns
+what the caller wants for that token, e.g. its own record with the
+resolved value converted. The result then has `:output`, the token names
+mapped to what the writer returned. The
+[incremental operations](#incremental-updates) run the writer only for
+the names in `:changed`; every other `:output` entry is the previous
+object, so a caller can keep the result as its cache and compare entries
+by identity.
+
+```clojure
+(ts/build {"spacing.base" {:val "8" :id 1}}
+          {:token-reader (fn [{:keys [val]}] {:value val})
+           :token-writer (fn [token value issues]
+                           (assoc token :resolved value :errors (mapv :code issues)))})
+;; => {... :output {"spacing.base" {:val "8" :id 1 :resolved #Number 8 :errors []}}}
+```
+
+Without a writer there is no `:output`.
 
 ### Sets
 
@@ -37,7 +81,7 @@ references reach across sets:
              [theme-id {"color.bg" {:value "#000"}}]]))
 
 (processor/source result "color.bg")    ;; => theme-id
-(processor/metadata result "color.bg")  ;; => the :metadata of that token data
+(processor/metadata result "color.bg")  ;; => the :metadata the reader returned for it
 ```
 
 Set keys and `:metadata` are not interpreted. A caller can pass its set
@@ -110,9 +154,9 @@ edit on the shared state and drop the result.
 |---|---|
 | `(create-token state name data opts)` | Adds a token, to the last set by default. Raises `:processor/token-already-exists` when that set has it. |
 | `(update-token state name data opts)` | Sets the data of a token, adding it when it does not exist. |
-| `(rename-token state name new-name opts)` | Renames a token. References to it break unless `:update-references? true` rewrites them. |
+| `(rename-token state name new-name opts)` | Renames a token. References to it break unless `:update-references` rewrites them, see [Renaming](#renaming). |
 | `(delete-token state name opts)` | Removes a token. Raises `:processor/token-not-found` when the set does not have it. |
-| `(set-sets state sets)` | Replaces the sets, for a theme switch or a toggled set. |
+| `(set-sets state sets)` | Replaces the sets, for a theme switch, a toggled set or an edit. |
 
 `opts` is optional. Its `:set` names the set to change; by default it is
 the set the token is taken from. An unknown set raises
@@ -130,6 +174,20 @@ changes.
 ;; => {:tokens {"a" #Number 10, "b" #Number 20} :dependents {"a" #{}, "b" #{"a"}} ...}
 ```
 
+Every operation adds `:changed` to the result: the token names whose
+`:tokens`, `:resolved`, `:issues`, `:graph` or `:output` entries it
+updated. Every other entry is the one of the previous result, so derived
+data per token is best kept in `:output` with a
+[token writer](#token-writer), which runs for these names only. The
+result maps are updated, not built again.
+
+`set-sets` lets a caller pass its sets as they are after every change.
+A set whose map is the same object as before is not looked into. In a
+set whose map changed, only the token data that is not the same object
+counts as changed. Added and removed sets change the names they define.
+When sets move relative to each other, or a set key repeats, every name
+is compared.
+
 An operation re-parses only the tokens whose data changed and
 re-resolves only what can observe them: the tokens referencing them,
 directly or through a group (`{color}`) or a key of a dictionary token
@@ -139,7 +197,52 @@ tokens waiting for it. Every other value is kept.
 
 `affected-tokens`, `modified-dependents`, `broken-references`,
 `tokens-with-issues`, `token-error`, `errors` and `issue-with-code?`
-read a result.
+read a result. `input` returns the token data a name is taken from, as
+the caller gave it.
+
+## Renaming
+
+`rename-token` renames the definition in the `:set` of `opts`, by
+default the set the token is taken from. A definition of the old name in
+an earlier set, shadowed until then, becomes visible:
+
+```clojure
+(def state
+  (:state (ts/build [[:a {"token-foo" {:value "red"} "accent" {:value "{token-foo}"}}]
+                     [:b {"token-foo" {:value "blue"} "accent" {:value "{token-foo}"}}]])))
+
+(processor/tokens->strings (processor/rename-token state "token-foo" "token-bar"))
+;; => {"token-foo" "#FF0000", "token-bar" "#0000FF", "accent" "#FF0000"}
+```
+
+The references to the old name then resolve to that definition, or
+break when there is none, unless `:update-references` rewrites them:
+
+| `:update-references` | Rewrites the references in |
+|---|---|
+| `:visible` | The visible definition of every token. |
+| `:all` | Every definition of every set, also the shadowed ones. |
+
+References to a field or key of the token (`{typo.fontSize}`) are
+rewritten too, as are the string leaves of structured values, but not
+references to a token of its own below the name (`{a.x}` when renaming
+`a`). Renaming a shadowed definition rewrites nothing: the references
+are to the visible one.
+
+The token data is rewritten in its shape: a plain value stays plain and
+DTCG data keeps its `$value` key. Records read by a `:token-reader` of
+the caller cannot be rewritten by the resolver, and a rewrite raises
+`:processor/token-not-updatable`. `(processor/reference-updates state
+name new-name opts)` takes the same options and returns the rewritten
+values, as the reader returns them, by set key and token name:
+
+```clojure
+(processor/reference-updates state "token-foo" "token-bar" {:update-references :all})
+;; => {[:a "accent"] "{token-bar}", [:b "accent"] "{token-bar}"}
+```
+
+A caller keeping its own records writes them and the new name into its
+records, and passes its sets to `set-sets`.
 
 ## Previews
 
