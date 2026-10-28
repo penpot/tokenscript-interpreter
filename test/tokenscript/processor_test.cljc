@@ -444,7 +444,10 @@
     (gen/one-of [(gen/tuple (gen/elements [:update :create]) token-name (gen/elements prop-values) set-key)
                  (gen/tuple (gen/elements [:delete]) token-name set-key)
                  (gen/tuple (gen/elements [:rename]) token-name token-name gen/boolean)
-                 (gen/tuple (gen/elements [:sets]) gen-sets)])))
+                 (gen/tuple (gen/elements [:sets]) gen-sets)
+                 ;; an edit of the current sets, keeping the other set maps
+                 ;; and token data as the same objects, or no edit
+                 (gen/tuple (gen/elements [:edit]) gen/nat token-name (gen/elements (into [::delete ::keep] prop-values)))])))
 
 (defn- apply-op
   "Result of `op` on `st`, nil when the operation is refused."
@@ -455,7 +458,13 @@
       :create (proc/create-token st a {:value b} (when c {:set c}))
       :delete (proc/delete-token st a (when b {:set b}))
       :rename (proc/rename-token st a b {:update-references? c})
-      :sets (proc/set-sets st a))
+      :sets (proc/set-sets st a)
+      :edit (let [sets (:sets st)
+                  i (mod a (count sets))]
+              (proc/set-sets st (case c
+                                  ::keep sets
+                                  ::delete (update-in sets [i 1] dissoc b)
+                                  (update-in sets [i 1] assoc b c)))))
     (catch #?(:clj Exception :cljs :default) e
       (when-not (contains? #{:processor/token-not-found :processor/token-already-exists :processor/token-set-not-found}
                            (:code (ex-data e)))
