@@ -1,6 +1,6 @@
 // XYZ-D65 Color Initializer
 // Creates an XYZ-D65 color from tristimulus values
-// Input: List of [x, y, z] tristimulus values
+// Input: List of [x, y, z] or [x, y, z, alpha] tristimulus values
 
 variable xyz_values: List = {input};
 variable output: Color.XYZD65;
@@ -8,6 +8,11 @@ variable output: Color.XYZD65;
 output.x = xyz_values.get(0);
 output.y = xyz_values.get(1);
 output.z = xyz_values.get(2);
+
+// Set alpha if provided as 4th parameter
+if (xyz_values.length() > 3) [
+  output.alpha = xyz_values.get(3);
+];
 
 return output;
 
