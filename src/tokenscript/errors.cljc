@@ -40,7 +40,8 @@
    "config" "CFG"
    "processor" "PROC"
    "color" "COLOR"
-   "unit" "UNIT"})
+   "unit" "UNIT"
+   "dtcg" "DTCG"})
 
 (defn- code->kind
   "Maps an error code to the error kind (the TS error class)."
@@ -49,6 +50,7 @@
     "lexer" :lexer
     "parser" :parser
     "processor" :processor
+    "dtcg" :dtcg
     :interpreter))
 
 (defn- code->string
@@ -100,6 +102,14 @@
   "True when `e` is an exception raised by this module."
   [e]
   (error-map? (ex-data e)))
+
+(defn language-result
+  "The result of `f`, nil when it raises a tokenscript error."
+  [f]
+  (try
+    (f)
+    (catch #?(:clj Throwable :cljs :default) e
+      (when-not (language-error? e) (throw e)))))
 
 (defn ->error-map
   "Returns the error map for either an exception or an error map."

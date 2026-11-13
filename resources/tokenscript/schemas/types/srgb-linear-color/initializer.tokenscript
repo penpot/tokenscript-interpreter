@@ -1,6 +1,6 @@
 // Linear sRGB Color Initializer
 // Creates a linear sRGB color from linear 0-1 values
-// Input: List of [r, g, b] linear values
+// Input: List of [r, g, b] or [r, g, b, alpha] linear values
 
 variable color_values: List = {input};
 variable output: Color.LinearSRGB;
@@ -8,6 +8,11 @@ variable output: Color.LinearSRGB;
 output.r = color_values.get(0);
 output.g = color_values.get(1);
 output.b = color_values.get(2);
+
+// Set alpha if provided as 4th parameter
+if (color_values.length() > 3) [
+  output.alpha = color_values.get(3);
+];
 
 return output;
 
