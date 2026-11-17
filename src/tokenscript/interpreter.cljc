@@ -19,6 +19,7 @@
    [clojure.string :as str]
    [tokenscript.colors :as colors]
    [tokenscript.config :as config]
+   [tokenscript.css-colors :as css-colors]
    [tokenscript.errors :as err]
    [tokenscript.functions :as functions]
    [tokenscript.lexer :as lex]
@@ -26,6 +27,7 @@
    [tokenscript.operations :as ops]
    [tokenscript.parser :as parser]
    [tokenscript.registry :as reg]
+   [tokenscript.schemas :as schemas]
    [tokenscript.symbols :as sym]
    [tokenscript.units :as units]
    [tokenscript.util :as u]))
@@ -310,12 +312,55 @@
     (catch #?(:clj Throwable :cljs :default) e
       (err/raise :functions/execution-error {:data (assoc (err/cause-data e) :function-name keyword)}))))
 
+;; Native implementations of bundled function scripts, by keyword: fns of
+;; the config, the argument symbols and a color conversion fn
+;; `(to-type color color-type)`, returning nil for the arguments they
+;; leave to the script.
+(def ^:private native-functions
+  {"rgb" css-colors/rgb
+   "rgba" css-colors/rgb
+   "hsl" css-colors/hsl
+   "hsla" css-colors/hsl})
+
+(def ^:private bundled-scripts
+  "Script of every bundled function, by keyword."
+  (delay
+    (into {}
+          (keep (fn [{:keys [schema]}]
+                  (when (= "function" (:type schema))
+                    [(u/name-key (:keyword schema)) (get-in schema [:script :script])])))
+          (schemas/schemas))))
+
+(defn native-function
+  "Native implementation of the registered dynamic function `dynamic`,
+  nil unless its script is the bundled script of a function with one. A
+  schema that redefines `rgb` with its own script runs that script."
+  [{:keys [keyword spec]}]
+  (when-let [f (get native-functions keyword)]
+    (when (= (get-in spec [:script :script]) (get @bundled-scripts keyword))
+      f)))
+
+(defn- call-native-function
+  "Runs `native`, the native implementation of the dynamic function
+  `dynamic`. The arguments it does not handle run the script, so the
+  errors are the script's."
+  [config native {:keys [keyword] :as dynamic} args]
+  (let [result (try
+                 (native config args #(color->type config %1 %2))
+                 (catch #?(:clj Throwable :cljs :default) e
+                   (err/raise :functions/execution-error {:data (assoc (err/cause-data e) :function-name keyword)})))]
+    (if (some? result)
+      result
+      (call-dynamic-function config dynamic args))))
+
 (defn resolve-function
   "Callable for `name`: dynamic functions first, then built ins.
   Returns a fn of the argument vector or nil."
   [config name]
   (if-let [dynamic (functions/dynamic-function (:functions config) name)]
-    (fn [args] (call-dynamic-function config dynamic args))
+    (if-let [native (native-function dynamic)]
+      (fn [args] (call-native-function config native dynamic args))
+      (fn [args] (call-dynamic-function config dynamic args)))
     (if (u/name= name "sum")
       (fn [args] (sum-fn config args))
       (functions/builtin name))))

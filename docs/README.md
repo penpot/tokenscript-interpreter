@@ -54,6 +54,7 @@ Anything else is used from the implementation namespaces directly.
 | `.interpreter`, `.operations` | Tree walking evaluator. Also runs the scripts of the registered schemas (color initializers and conversions, unit conversions, schema functions). |
 | `.symbols` | Runtime values. Scalars are immutable records; lists, dictionaries and tokens keep their content in a volatile because the language mutates them in place (`list.append(x)`). |
 | `.functions` | Built-in functions and the registry of schema functions. |
+| `.css-colors` | Native implementations of the bundled `rgb`, `rgba`, `hsl` and `hsla` scripts. |
 | `.config`, `.registry`, `.colors`, `.units`, `.token-types` | Schema registries. A config is an immutable `Config` record holding one registry record per kind, each implementing `registry/ISchemaRegistry`. |
 | `.schema-uri` | Parsing, normalizing and version resolution of schema URIs. |
 | `.schemas` | The bundled schemas, read from `resources/tokenscript/schemas`. |

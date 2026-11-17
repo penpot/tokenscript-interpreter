@@ -232,3 +232,20 @@ percentages (`hsl(0, 100, 50)`).
 The slash alpha syntax (`rgb(255 0 0 / 50%)`) is not supported: in
 tokenscript the slash is a division, evaluated before the function sees
 its arguments.
+
+The scripts define these functions, and `tokenscript.css-colors` also
+implements them natively: a call takes about a microsecond, where the
+script takes tens to hundreds, more than half of the build of a token
+set that uses them. A function registered with the bundled
+script (`css-rgb/rgb.tokenscript` or `css-hsl/hsl.tokenscript`, compared
+by text) runs the native version (`interpreter/native-function`). It
+computes the same values with the same arithmetic for numbers,
+percentages, `deg` hues and a color as first argument, and runs the
+script for any other arguments, so errors are the script's, wrapped in
+`:functions/execution-error`. A schema that registers its own script
+under one of these keywords runs that script. The schemas stay
+registered as they are: their descriptions, input properties and
+argument checks do not change.
+
+`tokenscript.css-functions-test` checks the native versions against the
+scripts.

@@ -12,6 +12,7 @@
    [tokenscript.errors :as err]
    [tokenscript.interpreter :as interp]
    [tokenscript.parser :as parser]
+   [tokenscript.schemas :as schemas]
    [tokenscript.symbols :as sym]))
 
 (def ^:private core-config*
@@ -26,6 +27,20 @@
   "Config with the bundled schemas."
   []
   (tsc/default-config))
+
+(def ^:private script-config*
+  (delay (config/register-schemas
+          (full-config)
+          (for [{:keys [schema] :as s} (schemas/schemas)
+                :when (= "function" (:type schema))]
+            ;; A script that is not the bundled text gets no native version
+            (update-in s [:schema :script :script] str "\n")))))
+
+(defn script-config
+  "`full-config` running every function as its script, without the
+  native implementations (`interpreter/native-function`)."
+  []
+  @script-config*)
 
 (defn evaluate
   "Evaluates `text` in script mode, returning the result symbol."
