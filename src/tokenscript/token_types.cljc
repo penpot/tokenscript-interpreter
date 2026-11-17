@@ -20,9 +20,9 @@
    [clojure.walk :as walk]
    [tokenscript.ast :as ast]
    [tokenscript.errors :as err]
-   [tokenscript.parser :as parser]
    [tokenscript.registry :as reg]
    [tokenscript.schema-uri :as suri]
+   [tokenscript.schemas :as schemas]
    [tokenscript.util :as u]))
 
 (def valid-schema-types ["number" "string" "token" "object" "list"])
@@ -38,7 +38,7 @@
 (defn- parse-validation
   [script]
   (try
-    {:script script :ast (:ast (parser/parse script))}
+    {:script script :ast (schemas/script-ast script)}
     (catch #?(:clj Throwable :cljs :default) _
       {:script script :ast nil})))
 
@@ -77,7 +77,7 @@
 
 (defn- error-types-of
   [registry token-type]
-  (when-let [tree (:ast (validation registry token-type))]
+  (when-let [tree (force (:ast (validation registry token-type)))]
     (->> (ast/filter-nodes tree #(= :return (:node %)))
          (keep (fn [{:keys [expr]}] (when (= :string (:node expr)) (:value expr))))
          (vec))))

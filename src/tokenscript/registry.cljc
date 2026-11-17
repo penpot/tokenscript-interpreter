@@ -30,8 +30,8 @@
   run on every color or unit conversion but only depend on the specs and
   conversions."
   (:require
-   [tokenscript.parser :as parser]
    [tokenscript.schema-uri :as suri]
+   [tokenscript.schemas :as schemas]
    [tokenscript.util :as u]))
 
 (defprotocol ISchemaRegistry
@@ -86,7 +86,7 @@
   (reduce (fn [registry {:keys [source target script]}]
             (let [source-uri (suri/normalize (if (= source "$self") uri source))
                   target-uri (suri/normalize (if (= target "$self") uri target))
-                  ast (:ast (parser/parse (:script script)))]
+                  ast (schemas/script-ast (:script script))]
               (add-conversion registry source-uri target-uri
                               {:ast ast :source-uri source-uri :target-uri target-uri})))
           registry

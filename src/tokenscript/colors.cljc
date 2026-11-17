@@ -21,9 +21,9 @@
   (:require
    [clojure.walk :as walk]
    [tokenscript.errors :as err]
-   [tokenscript.parser :as parser]
    [tokenscript.registry :as reg]
    [tokenscript.schema-uri :as suri]
+   [tokenscript.schemas :as schemas]
    [tokenscript.util :as u]))
 
 (def hex-color-uri "/api/v1/core/hex-color/0/")
@@ -60,7 +60,7 @@
   [registry spec]
   (reduce (fn [registry {:keys [keyword script]}]
             (let [ast (try
-                        (:ast (parser/parse (:script script)))
+                        (schemas/script-ast (:script script))
                         (catch #?(:clj Throwable :cljs :default) e
                           (err/raise :color/initializer-construct-failed
                                      {:data (err/cause-data e)})))]

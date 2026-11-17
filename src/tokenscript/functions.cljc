@@ -24,8 +24,8 @@
    [clojure.walk :as walk]
    [tokenscript.errors :as err]
    [tokenscript.math :as mth]
-   [tokenscript.parser :as parser]
    [tokenscript.registry :as reg]
+   [tokenscript.schemas :as schemas]
    [tokenscript.symbols :as sym]
    [tokenscript.util :as u]))
 
@@ -246,7 +246,7 @@
   [registry uri spec]
   (let [spec (normalize-spec uri spec)
         keyword (u/name-key (:keyword spec))
-        ast (:ast (parser/parse (get-in spec [:script :script])))]
+        ast (schemas/script-ast (get-in spec [:script :script]))]
     (-> registry
         (assoc-in [:specs keyword] spec)
         (assoc-in [:spec-types (u/name-key (:name spec))] keyword)

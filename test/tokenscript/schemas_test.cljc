@@ -11,6 +11,7 @@
    [tokenscript.colors :as colors]
    [tokenscript.config :as config]
    [tokenscript.core :as tsc]
+   [tokenscript.parser :as parser]
    [tokenscript.registry :as reg]
    [tokenscript.schema-uri :as suri]
    [tokenscript.schemas :as schemas]))
@@ -33,6 +34,21 @@
                             nil)]
             {:keys [script]} scripts]
       (t/is (and (string? script) (not (str/ends-with? script ".tokenscript"))) uri))))
+
+(t/deftest shipped-script-asts-test
+  (t/testing "the shipped scripts get the AST their text parses to, when it is forced"
+    (doseq [{:keys [uri schema]} (schemas/schemas)
+            :let [scripts (case (:type schema)
+                            "color" (map :script (concat (:initializers schema) (:conversions schema)))
+                            "function" [(:script schema)]
+                            "token" (keep identity [(:validation schema)])
+                            nil)]
+            {:keys [script]} scripts]
+      (t/is (= (:ast (parser/parse script)) (force (schemas/script-ast script))) uri)))
+
+  (t/testing "any other script is parsed when it is registered"
+    (t/is (= (:ast (parser/parse "return 1 + 2;")) (schemas/script-ast "return 1 + 2;")))
+    (t/is (thrown? #?(:clj Exception :cljs :default) (schemas/script-ast "return (;")))))
 
 (t/deftest uri-host-test
   (t/testing "the host of an absolute URI is not part of its identity"
