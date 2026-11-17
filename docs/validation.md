@@ -26,12 +26,15 @@ with another type, or without one, is not validated.
 | `fontFamilies` | A name or a list of names | `INVALID_FONT_FAMILY_TYPE` |
 | `typography` | A dictionary; its fields by their types (below) | `INVALID_TYPOGRAPHY_TYPE` |
 | `shadow` | A list of dictionaries; their fields by their types (below) | `INVALID_SHADOW_TYPE` |
+| `gradient` | A dictionary with a `kind` (`linear` or `radial`) and at least two `stops`, each a dictionary with a `color` and a `position` from 0 to 1, or from `0%` to `100%`; its `angle` and the stop colors by their types (below) | `INVALID_GRADIENT_TYPE`, `INVALID_GRADIENT_KIND`, `INVALID_GRADIENT_STOPS`, `INVALID_GRADIENT_STOP_POSITION` |
 
 The fields of a typography are `fontFamily`, `fontSize`, `fontWeight`,
 `letterSpacing`, `lineHeight`, `paragraphSpacing`, `paragraphIndent`,
 `textCase` and `textDecoration`; those of a shadow `color`, `offsetX`,
-`offsetY`, `blur` and `spread`. A failing field reports the code of its
-type with the field's `:path`: `INVALID_DIMENSION_TYPE` at `[0 "blur"]`.
+`offsetY`, `blur` and `spread`; those of a gradient `angle` (a
+`rotation`) and the `color` of each stop. A failing field reports the
+code of its type with the field's `:path`: `INVALID_DIMENSION_TYPE` at
+`[0 "blur"]`, `INVALID_COLOR_TYPE` at `["stops" 1 "color"]`.
 
 The checks are about the kind of value, so `1foo` (the number 1 and the
 word foo, an implicit list) is not a dimension. Units, ranges and
@@ -84,9 +87,10 @@ registry can return, read from their `return "..."` statements.
 
 When the value is valid, its fields are validated by their own types.
 `schema` names them with `{"type": "token", "url": <token type URI>}`,
-in `properties` for an object or in `items` for a list. Field names
-match ignoring case, `-` and `_`, so `lineHeight` also finds
-`line-height`:
+in `properties` for an object or in `items` for a list. Objects and
+lists nest, as the `stops` of a gradient: a list of objects inside an
+object. Field names match ignoring case, `-` and `_`, so `lineHeight`
+also finds `line-height`:
 
 ```json
 {

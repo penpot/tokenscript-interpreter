@@ -1,0 +1,40 @@
+// A gradient: a dictionary with its kind (linear or radial) and at
+// least two color stops, as the `linear-gradient()` function returns it.
+// A stop is a dictionary with a color and a position from 0 to 1, or
+// from 0% to 100%. The angle and the stop colors are validated by their
+// own token types, see the schema.
+if (!is_dictionary({input})) [
+  return "INVALID_GRADIENT_TYPE";
+];
+if (!{input}.key_exists("kind") || !is_string({input}.get("kind"))) [
+  return "INVALID_GRADIENT_KIND";
+];
+if ({input}.get("kind") != "linear" && {input}.get("kind") != "radial") [
+  return "INVALID_GRADIENT_KIND";
+];
+if (!{input}.key_exists("stops") || !is_list({input}.get("stops"))) [
+  return "INVALID_GRADIENT_STOPS";
+];
+if ({input}.get("stops").length() < 2) [
+  return "INVALID_GRADIENT_STOPS";
+];
+for stop in {input}.get("stops") [
+  if (!is_dictionary(stop)) [
+    return "INVALID_GRADIENT_STOPS";
+  ];
+  if (!stop.key_exists("color") || !stop.key_exists("position")) [
+    return "INVALID_GRADIENT_STOPS";
+  ];
+  if (is_number(stop.get("position"))) [
+    if (stop.get("position") < 0 || stop.get("position") > 1) [
+      return "INVALID_GRADIENT_STOP_POSITION";
+    ];
+  ] elif (is_number_with_unit(stop.get("position")) && type(stop.get("position")) == "%") [
+    if (stop.get("position").value < 0 || stop.get("position").value > 100) [
+      return "INVALID_GRADIENT_STOP_POSITION";
+    ];
+  ] else [
+    return "INVALID_GRADIENT_STOP_POSITION";
+  ];
+];
+return true;

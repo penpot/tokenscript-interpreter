@@ -345,12 +345,25 @@
     (sequential? v) (mapv read-shadow-object v)
     :else v))
 
+(defn read-gradient
+  "A gradient value as a map with its `kind`, its `angle` and its
+  `stops`. A list of stops, which is how the DTCG drafts write a gradient,
+  is a linear gradient. References are kept."
+  [v]
+  (if (sequential? v)
+    {"kind" "linear" "stops" (vec v)}
+    v))
+
 (defn read-value
   "Reads the value `v` of a token of `type` (a type name of the bundled
   token types, see `read-type`). Returns `{:value v}`, with `:warnings`
   for colors read as their hex, or `{:error reason}`."
   [type v]
-  (read-tree (if (= "shadow" type) (read-shadow v) v) []))
+  (read-tree (case type
+               "shadow"   (read-shadow v)
+               "gradient" (read-gradient v)
+               v)
+             []))
 
 ;; Writing values -------------------------------------------------------------
 
