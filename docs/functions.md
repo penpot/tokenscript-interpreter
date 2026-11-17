@@ -92,7 +92,6 @@ An argument outside its domain raises `:functions/argument-out-of-range`.
 |---|---|
 | `parse_int(string)`, `parse_int(string, radix)` | Like JavaScript `parseInt`; raises when nothing parses |
 | `range(n)`, `range(start, end)` | The list of whole numbers from `start` (or 0) up to `end`, excluded; at most 1 000 000 |
-| `linear-gradient(...)` | The arguments as the string `linear-gradient(a, b)` |
 
 Calls to the CSS keywords `inside`, `outside`, `above`, `below`,
 `left`, `right`, `top`, `bottom`, `before`, `after`, `between`,

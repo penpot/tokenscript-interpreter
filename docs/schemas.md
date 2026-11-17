@@ -126,6 +126,11 @@ A schema function is a script called by its keyword.
 A schema function takes precedence over a built-in function or a color
 initializer with the same name.
 
+A call with fewer arguments than required raises
+`:functions/requires-min-arguments`. Further arguments are passed on to
+the script, so a function that takes any number of them, like
+`linear-gradient`, lists only the ones a call needs.
+
 ## Units
 
 The unit registry starts with these units (`units/default-specs`):
@@ -188,7 +193,7 @@ The bundled schemas are in
 |---|---|---|
 | `types/<name>/` | Color spaces: sRGB, HSL, OKLCH, P3, ... | `/api/v1/core/<name>/0/` |
 | `tokens/<name>/` | Token types with validation scripts: `dimension`, `opacity`, `typography`, ... (see [Token validation](validation.md#bundled-token-types)) | `/api/v1/core/<name>/0/` |
-| `functions/<name>/` | Functions: `lighten`, `darken`, `saturate`, `desaturate`, `mix`, `invert`, and the CSS color functions `rgb`, `rgba`, `hsl`, `hsla` | `/api/v1/function/<name>/0/` |
+| `functions/<name>/` | Functions: `lighten`, `darken`, `saturate`, `desaturate`, `mix`, `invert`, the CSS color functions `rgb`, `rgba`, `hsl`, `hsla` and `linear-gradient` | `/api/v1/function/<name>/0/` |
 | `constants/<name>/` | CSS named colors | `/api/v1/constants/<name>/0/` |
 
 Each directory holds a `schema.json` that references its scripts by
@@ -232,3 +237,28 @@ percentages (`hsl(0, 100, 50)`).
 The slash alpha syntax (`rgb(255 0 0 / 50%)`) is not supported: in
 tokenscript the slash is a division, evaluated before the function sees
 its arguments.
+
+### CSS linear-gradient
+
+`linear-gradient` is a schema function written in tokenscript. It reads
+the arguments of the CSS function and returns the value of a
+[`gradient` token](validation.md#bundled-token-types): a dictionary with
+`kind` (`linear`), `angle` in degrees and `stops`, each with a `color`
+and a `position` from 0 to 1.
+
+```text
+linear-gradient(to right, #5500ff, #00ff55)
+linear-gradient(90deg, #f00 0%, {color.brand} 50% 80%, rgb(0, 0, 255) 100%)
+linear-gradient(0.25turn, {start}, {end})
+```
+
+- The direction is `to` and one or two sides, or an angle in `deg`,
+  `grad`, `rad` or `turn`. Without one the gradient goes `to bottom`.
+- A stop is a color followed by one position in percent, or two for two
+  stops of the same color; a lone percentage is a color hint and is left
+  out. Stops without a position get the one CSS gives them.
+  Positions are clamped to 0%-100%.
+- It returns null for arguments that make no gradient, which the token
+  type reports as `INVALID_GRADIENT_TYPE`.
+- A negative position (`red -20%`) is a subtraction in tokenscript: write
+  it `red 0%`, or [import](importers.md) the CSS.
