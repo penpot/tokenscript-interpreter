@@ -119,12 +119,29 @@ A schema function is a script called by its keyword.
 | Key | |
 |---|---|
 | `keyword` | The function name, case insensitive. |
-| `input.properties` | The parameters. The call needs at least as many arguments as there are properties without `"optional": true`. |
+| `input` | An array schema for the arguments: `items` describes each position (`type`, `description`), `additionalItems` the ones after them, and `minItems` is the number of arguments a call needs. `maxItems` is documentation only, it is not checked. |
 | `script.script` | The script. It gets the arguments as the list `{input}`; returning null raises `:functions/function-returned-null`. |
 | `requirements` | URIs of the schemas the script uses. Checked for the bundled schemas, see below. |
 
 A schema function takes precedence over a built-in function or a color
 initializer with the same name.
+
+```json
+"input": {
+  "type": "array",
+  "items": [
+    { "type": "color", "description": "The color to lighten" },
+    { "type": "number", "description": "Amount (0-1). Default is 0.25" }
+  ],
+  "minItems": 1,
+  "maxItems": 2
+}
+```
+
+A call with fewer than `minItems` arguments raises
+`:functions/requires-min-arguments`. An `input` of `"type": "object"`
+with `properties` still works: it requires one argument per property
+without `"optional": true`.
 
 ## Units
 

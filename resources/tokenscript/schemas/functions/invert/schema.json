@@ -4,13 +4,15 @@
   "description": "Inverts a color by inverting each RGB channel (R' = 255 - R, G' = 255 - G, B' = 255 - B).",
   "keyword": "invert",
   "input": {
-    "type": "object",
-    "properties": {
-      "color": {
+    "type": "array",
+    "items": [
+      {
         "type": "color",
         "description": "The color to invert."
       }
-    }
+    ],
+    "minItems": 1,
+    "maxItems": 1
   },
   "script": {
     "type": "/api/v1/core/tokenscript/0/",
