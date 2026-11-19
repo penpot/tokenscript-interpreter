@@ -183,34 +183,39 @@
         (into [] (remove :valid?) (validate* config type-name value (conj visited url) path (inc depth))))
       [])))
 
-(defn- validate-properties
-  [config m properties visited path depth]
-  (let [lookup (property-lookup m)]
-    (reduce-kv (fn [results prop-name {:keys [type url]}]
-                 (let [prop-name (name prop-name)
-                       prop-value (when (and (= "token" type) url) (lookup prop-name))]
-                   (if (some? prop-value)
-                     (into results (validate-field config url prop-value visited (conj path prop-name) depth))
-                     results)))
-               []
-               properties)))
+(defn- validate-shape
+  "Failures of the fields of `value`, which `shape` describes: a field
+  of a token type (`url`), a list (`items`) or an object
+  (`properties`). Lists and objects nest. A value of another shape has
+  no fields to validate."
+  [config value {:keys [type url items properties]} visited path depth]
+  (cond
+    (and (= "token" type) url)
+    (validate-field config url value visited path depth)
 
-(defn- validate-items
-  [config value items-spec visited path depth]
-  (if-not (sym/list? value)
-    []
-    (reduce (fn [results [i item]]
-              (let [item-path (conj path i)]
-                (cond-> results
-                  (and (= "object" (:type items-spec)) (:properties items-spec))
-                  (into (if-let [m (value-map item)]
-                          (validate-properties config m (:properties items-spec) visited item-path (inc depth))
-                          []))
+    (and (= "list" type) items)
+    (if (sym/list? value)
+      (reduce (fn [results [i item]]
+                (into results (validate-shape config item items visited (conj path i) depth)))
+              []
+              (map-indexed vector (sym/value value)))
+      [])
 
-                  (and (= "token" (:type items-spec)) (:url items-spec))
-                  (into (validate-field config (:url items-spec) item visited item-path depth)))))
-            []
-            (map-indexed vector (sym/value value)))))
+    (some? properties)
+    (if-let [m (value-map value)]
+      (let [lookup (property-lookup m)]
+        (reduce-kv (fn [results prop-name prop-shape]
+                     (let [prop-name (name prop-name)
+                           prop-value (lookup prop-name)]
+                       (if (some? prop-value)
+                         (into results (validate-shape config prop-value prop-shape visited (conj path prop-name) depth))
+                         results)))
+                   []
+                   properties))
+      [])
+
+    :else
+    []))
 
 (defn- validate*
   [config token-type value visited path depth]
@@ -220,14 +225,7 @@
       (if-not (:valid? top)
         [top]
         (let [schema (:schema (:spec (type-info (:tokens config) token-type)))
-              results (cond
-                        (nil? schema) []
-                        (and (= "list" (:type schema)) (:items schema))
-                        (validate-items config value (:items schema) visited path depth)
-                        (nil? (:properties schema)) []
-                        :else (if-let [m (value-map value)]
-                                (validate-properties config m (:properties schema) visited path depth)
-                                []))]
+              results (validate-shape config value schema visited path depth)]
           (if (seq results)
             results
             [{:valid? true :token-type token-type}]))))))

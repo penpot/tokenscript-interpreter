@@ -186,6 +186,30 @@
     (t/is (= [{"offsetX" "0" "offsetY" "2px" "blur" "4px" "color" "#000" "inset" true}]
              (get-in (th/set-tokens result "s") ["shadow.legacy" :value])))))
 
+(t/deftest read-gradient-values
+  (let [result (read/read
+                {"gradient" {"$type" "gradient"
+                             "list" {"$value" [{"color" "#ff0000" "position" 0}
+                                               {"color" {"colorSpace" "srgb" "components" [0 0 1]}
+                                                "position" "{position.end}"}]}
+                             "map" {"$value" {"kind" "radial"
+                                              "stops" [{"color" "#ff0000" "position" 0}
+                                                       {"color" "#0000ff" "position" 1}]}}
+                             "alias" {"$value" "{gradient.map}"}}}
+                {:set-name "s"})
+        tokens (th/set-tokens result "s")]
+    (t/testing "a list of stops is a linear gradient"
+      (t/is (= {"kind" "linear"
+                "stops" [{"color" "#ff0000" "position" 0}
+                         {"color" "srgb(0, 0, 1)" "position" "{position.end}"}]}
+               (get-in tokens ["gradient.list" :value]))))
+    (t/testing "a map and a reference are kept"
+      (t/is (= {"kind" "radial"
+                "stops" [{"color" "#ff0000" "position" 0}
+                         {"color" "#0000ff" "position" 1}]}
+               (get-in tokens ["gradient.map" :value])))
+      (t/is (= "{gradient.map}" (get-in tokens ["gradient.alias" :value]))))))
+
 (t/deftest read-spec-type-names
   (let [result (read/read {"f" {"$type" "fontFamily" "$value" "Inter"}
                            "w" {"$type" "fontWeight" "$value" 700}}

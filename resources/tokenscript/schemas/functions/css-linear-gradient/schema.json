@@ -1,0 +1,25 @@
+{
+  "name": "CSS Linear Gradient",
+  "type": "function",
+  "description": "CSS linear-gradient(): an optional direction and at least two color stops. Returns the gradient token value: a Dictionary with its kind, its angle in degrees and its stops, each with a color and a position from 0 to 1.",
+  "keyword": "linear-gradient",
+  "input": {
+    "type": "array",
+    "items": [
+      {
+        "description": "The direction (`to right`, `90deg`, `0.25turn`) or the first color stop"
+      },
+      {
+        "description": "A color stop: a color, followed by one or two positions in percent"
+      }
+    ],
+    "additionalItems": {
+      "description": "Further color stops"
+    },
+    "minItems": 2
+  },
+  "script": {
+    "type": "/api/v1/core/tokenscript/0/",
+    "script": "./linear-gradient.tokenscript"
+  }
+}

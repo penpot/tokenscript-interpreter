@@ -61,6 +61,8 @@ Anything else is used from the implementation namespaces directly.
 | `.validation` | Validation of resolved values against token type schemas. |
 | `.document.read`, `.document.write` | Reading and writing token files: DTCG, legacy and multi-set files. The format is decided per token. |
 | `.document.dtcg` | What DTCG means in a file: its tokens and legacy tokens, type names, JSON pointers, and its values (dimensions, colors, shadows) read as tokenscript source, so the resolver reads and checks them like any token, and written back. |
+| `.importers.syntax` | The CSS syntax the importers share: tokenizes a value and parses its calls with their arguments, without reading `/` or `-` as arithmetic. |
+| `.importers.css` | Imports CSS as tokenscript: a `linear-gradient()` as the value of a `gradient` token and as the tokenscript the bundled function reads. |
 | `.document.themes` | The sets and themes of multi-set files: `$themes` and `$metadata`. |
 | `.errors` | Error codes and error maps. |
 | `.util` | JavaScript compatible number formatting and string handling, and case insensitive name tables. |

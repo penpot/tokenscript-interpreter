@@ -119,12 +119,29 @@ A schema function is a script called by its keyword.
 | Key | |
 |---|---|
 | `keyword` | The function name, case insensitive. |
-| `input.properties` | The parameters. The call needs at least as many arguments as there are properties without `"optional": true`. |
+| `input` | An array schema for the arguments: `items` describes each position (`type`, `description`), `additionalItems` the ones after them, and `minItems` is the number of arguments a call needs. `maxItems` is documentation only, it is not checked. |
 | `script.script` | The script. It gets the arguments as the list `{input}`; returning null raises `:functions/function-returned-null`. |
 | `requirements` | URIs of the schemas the script uses. Checked for the bundled schemas, see below. |
 
 A schema function takes precedence over a built-in function or a color
 initializer with the same name.
+
+```json
+"input": {
+  "type": "array",
+  "items": [
+    { "type": "color", "description": "The color to lighten" },
+    { "type": "number", "description": "Amount (0-1). Default is 0.25" }
+  ],
+  "minItems": 1,
+  "maxItems": 2
+}
+```
+
+A call with fewer than `minItems` arguments raises
+`:functions/requires-min-arguments`. An `input` of `"type": "object"`
+with `properties` still works: it requires one argument per property
+without `"optional": true`.
 
 ## Units
 
@@ -188,7 +205,7 @@ The bundled schemas are in
 |---|---|---|
 | `types/<name>/` | Color spaces: sRGB, HSL, OKLCH, P3, ... | `/api/v1/core/<name>/0/` |
 | `tokens/<name>/` | Token types with validation scripts: `dimension`, `opacity`, `typography`, ... (see [Token validation](validation.md#bundled-token-types)) | `/api/v1/core/<name>/0/` |
-| `functions/<name>/` | Functions: `lighten`, `darken`, `saturate`, `desaturate`, `mix`, `invert`, and the CSS color functions `rgb`, `rgba`, `hsl`, `hsla` | `/api/v1/function/<name>/0/` |
+| `functions/<name>/` | Functions: `lighten`, `darken`, `saturate`, `desaturate`, `mix`, `invert`, the CSS color functions `rgb`, `rgba`, `hsl`, `hsla` and `linear-gradient` | `/api/v1/function/<name>/0/` |
 | `constants/<name>/` | CSS named colors | `/api/v1/constants/<name>/0/` |
 
 Each directory holds a `schema.json` that references its scripts by
@@ -232,3 +249,28 @@ percentages (`hsl(0, 100, 50)`).
 The slash alpha syntax (`rgb(255 0 0 / 50%)`) is not supported: in
 tokenscript the slash is a division, evaluated before the function sees
 its arguments.
+
+### CSS linear-gradient
+
+`linear-gradient` is a schema function written in tokenscript. It reads
+the arguments of the CSS function and returns the value of a
+[`gradient` token](validation.md#bundled-token-types): a dictionary with
+`kind` (`linear`), `angle` in degrees and `stops`, each with a `color`
+and a `position` from 0 to 1.
+
+```text
+linear-gradient(to right, #5500ff, #00ff55)
+linear-gradient(90deg, #f00 0%, {color.brand} 50% 80%, rgb(0, 0, 255) 100%)
+linear-gradient(0.25turn, {start}, {end})
+```
+
+- The direction is `to` and one or two sides, or an angle in `deg`,
+  `grad`, `rad` or `turn`. Without one the gradient goes `to bottom`.
+- A stop is a color followed by one position in percent, or two for two
+  stops of the same color; a lone percentage is a color hint and is left
+  out. Stops without a position get the one CSS gives them.
+  Positions are clamped to 0%-100%.
+- It returns null for arguments that make no gradient, which the token
+  type reports as `INVALID_GRADIENT_TYPE`.
+- A negative position (`red -20%`) is a subtraction in tokenscript: write
+  it `red 0%`, or [import](importers.md) the CSS.

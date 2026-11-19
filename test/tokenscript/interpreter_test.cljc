@@ -76,7 +76,6 @@
   (t/is (= "color.hex" (h/ev "type(#333)")))
   (t/is (= "list.implicit" (h/ev "type({a})" {"a" (sym/list [(sym/number 1)] true)})))
   (t/is (= "true" (h/ev "is_number(1) && is_string(\"a\") && is_color(#fff) && is_null(null)")))
-  (t/is (= "linear-gradient(1, 2 5px, 3rem)" (h/ev "linear-gradient(1, 2 5px, 3rem)")))
   (t/is (= :interpreter/unknown-function (h/ev-error "unknown_function(1, 2, 3)")))
   (t/is (= :functions/expects-number-arguments (h/ev-error "abs(\"a\")")))
   (t/is (= :functions/requires-min-arguments (h/ev-error "min()")))

@@ -215,7 +215,6 @@
   "All built in functions without unit conversion needs."
   (merge math-functions
          {"parse_int" parse-int-fn
-          "linear-gradient" (fn [args] (sym/string (str "linear-gradient(" (str/join ", " (map sym/to-string args)) ")")))
           "type" type-fn
           "is_null" (type-predicate "Null")
           "is_number" (type-predicate "Number")
@@ -279,12 +278,23 @@
   [registry]
   (distinct (concat (keys (:dynamic registry)) (keys builtin-functions) ["sum"])))
 
+(defn- min-arguments
+  "How many arguments the input of a spec requires. The input is either
+  an array schema (`minItems`) or an object whose properties are the
+  positional parameters, optional ones marked `optional`."
+  [input]
+  (if (= "array" (:type input))
+    (:minItems input 0)
+    (->> (:properties input)
+         (remove (fn [[_ prop]] (:optional prop)))
+         count)))
+
 (defn validate-args
   "Checks the argument count of a schema registered function against the
-  required input properties of its spec."
+  arguments its spec requires."
   [registry name args token]
-  (when-let [properties (get-in (spec registry name) [:input :properties])]
-    (let [required (count (remove (fn [[_ prop]] (:optional prop)) properties))]
+  (when-let [input (:input (spec registry name))]
+    (let [required (min-arguments input)]
       (when (< (count args) required)
         (err/raise :functions/requires-min-arguments
                    {:token token :data {:function-name name :min-args required}})))))

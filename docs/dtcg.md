@@ -91,6 +91,7 @@ The format is decided per node, so a file can mix them:
 | `{"value": 16, "unit": "px"}`, `{"value": 200, "unit": "ms"}` (dimensions, durations) | `"16px"`, `"200ms"` |
 | `{"colorSpace": .., "components": .., "alpha": .., "hex": ..}` | the color in its color space, `oklch(0.628, 0.2577, 29.23, 0.5)`, see [colors](#colors) |
 | typography, other composites | the same map; its fields are read like values |
+| a gradient list | the map `{"kind": "linear", "stops": [..]}`: a list of stops is a linear gradient; a gradient map is kept |
 | a shadow object or list | a vector of shadow objects with `offsetX`, `offsetY`, `blur`, `spread`, `color` and `inset` (a boolean). The legacy `x`, `y` and `type: innerShadow` are read as `offsetX`, `offsetY` and `inset` |
 
 ### Colors
