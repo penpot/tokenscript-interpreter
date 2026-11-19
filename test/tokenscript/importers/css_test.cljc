@@ -86,6 +86,24 @@
              (css/linear-gradient "background: linear-gradient(red, blue);")
              (css/linear-gradient "background-image:\nlinear-gradient(\n  red,\n  blue\n);"))))
 
+  (t/testing "the declarations a CSS tool copies: the gradient is the one that counts"
+    (t/is (= (css/linear-gradient "linear-gradient(90deg, rgba(42, 123, 155, 1) 0%, rgba(87, 199, 133, 1) 50%, rgba(237, 221, 83, 1) 100%)")
+             (css/linear-gradient (str "background: #2A7B9B;background: linear-gradient(90deg,"
+                                       "rgba(42, 123, 155, 1) 0%, rgba(87, 199, 133, 1) 50%, rgba(237, 221, 83, 1) 100%);")))
+          "a fallback color first")
+    (t/is (= ["90" ["#020024" "#00d4ff"]]
+             (let [gradient (css/linear-gradient
+                             (str "/* generated */\n"
+                                  "background: #020024;\n"
+                                  "background: -webkit-linear-gradient(left, #111111 0%, #222222 100%);\n"
+                                  "background: linear-gradient(90deg, #020024 0%, #00d4ff 100%);\n"
+                                  "filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#020024', endColorstr='#00d4ff', GradientType=1);"))]
+               [(get gradient "angle") (map #(get % "color") (get gradient "stops"))]))
+          "vendor lines, comments and an IE filter")
+    (t/is (nil? (css/linear-gradient "background: #2A7B9B; color: red;")))
+    (t/is (nil? (css/linear-gradient "/* never closed linear-gradient(red, blue)")))
+    (t/is (nil? (css/linear-gradient "background: url('unclosed;"))))
+
   (t/testing "anything else is no linear gradient"
     (t/are [text] (nil? (css/linear-gradient text))
       nil
