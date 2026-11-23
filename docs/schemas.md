@@ -143,6 +143,10 @@ The unit registry starts with these units (`units/default-specs`):
 | `ms` | absolute | `s` |
 | `%` | relative | |
 | `ch` | absolute | |
+| `deg` | absolute | |
+| `turn` | absolute | `deg`, at 360deg per turn |
+| `rad` | absolute | `deg`, at 180/π deg per rad |
+| `grad` | absolute | `deg`, at 0.9deg per grad |
 
 A unit spec has a `name`, a `keyword` and a `type`, `absolute` or
 `relative`. Its `conversions` work like those of color spaces, with

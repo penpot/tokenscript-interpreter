@@ -25,7 +25,7 @@
 
 (def supported-formats
   "Unit keywords (`SupportedFormats` in the TS implementation)."
-  ["px" "em" "rem" "vw" "vh" "pt" "in" "cm" "mm" "deg" "%" "s" "ms" "ch"])
+  ["px" "em" "rem" "vw" "vh" "pt" "in" "cm" "mm" "deg" "turn" "rad" "grad" "%" "s" "ms" "ch"])
 
 (def supported-format-set (set supported-formats))
 

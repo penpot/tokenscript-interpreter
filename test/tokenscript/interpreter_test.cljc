@@ -49,6 +49,19 @@
   (t/is (= :operations/cannot-mix-units (h/ev-error "1px + 1deg")))
   (t/is (= "NumberWithUnit.Px" (h/ev-type "3px"))))
 
+(t/deftest angle-units-test
+  (t/testing "turn, rad and grad are units, like deg"
+    (t/is (= "0.25turn" (h/ev "0.25turn")))
+    (t/is (= "NumberWithUnit.Turn" (h/ev-type "0.25turn")))
+    (t/is (= "NumberWithUnit.Rad" (h/ev-type "1rad")))
+    (t/is (= "NumberWithUnit.Grad" (h/ev-type "100grad"))))
+  (t/testing "they convert to degrees"
+    (t/is (= "180deg" (h/ev "0.25turn + 90deg")))
+    (t/is (= "180deg" (h/ev "90deg + 0.25turn")))
+    (t/is (= "270deg" (h/ev "0.5turn + 90deg"))))
+  (t/testing "an angle does not mix with a length"
+    (t/is (= :operations/cannot-mix-units (h/ev-error "1px + 1turn")))))
+
 (t/deftest comparisons-and-logic-test
   (t/is (= "true" (h/ev "1 < 2")))
   (t/is (= "false" (h/ev "1 == 2")))

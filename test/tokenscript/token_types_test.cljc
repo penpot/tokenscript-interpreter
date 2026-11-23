@@ -44,6 +44,12 @@
   (t/testing "type names are case insensitive"
     (t/is (= {"x" ["INVALID_DIMENSION_TYPE"]} (codes {"x" ["1foo" "Dimension"]})))))
 
+(t/deftest rotation-test
+  (t/is (= {"plain" [] "deg" [] "turn" [] "rad" [] "grad" [] "word" ["INVALID_ROTATION_TYPE"]}
+           (codes {"plain" ["90" "rotation"] "deg" ["90deg" "rotation"]
+                   "turn" ["0.25turn" "rotation"] "rad" ["1rad" "rotation"]
+                   "grad" ["100grad" "rotation"] "word" ["quarter" "rotation"]}))))
+
 (t/deftest number-test
   (t/is (= {"ok" [] "unit" ["INVALID_NUMBER_UNIT"] "string" ["INVALID_NUMBER_TYPE"]}
            (codes {"ok" ["1.5" "number"] "unit" ["10px" "number"] "string" ["abc" "number"]}))))
@@ -142,6 +148,12 @@
                         "big-percent" (with-stop {"color" "#fff" "position" "150%"})
                         "px" (with-stop {"color" "#fff" "position" "8px"})
                         "not-a-number" (with-stop {"color" "#fff" "position" "#fff"})}))))
+    (t/testing "the angle is a rotation in any angle unit"
+      (t/is (= {"deg" [] "turn" [] "rad" [] "grad" []}
+               (issues {"deg" (gradient {"angle" "45deg"})
+                        "turn" (gradient {"angle" "0.25turn"})
+                        "rad" (gradient {"angle" "1rad"})
+                        "grad" (gradient {"angle" "100grad"})}))))
     (t/testing "the angle and the stop colors fail with the codes of their types"
       (t/is (= {"bad-angle" [["INVALID_ROTATION_TYPE" ["angle"]]]
                 "bad-color" [["INVALID_COLOR_TYPE" ["stops" 2 "color"]]]}

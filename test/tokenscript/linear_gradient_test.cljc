@@ -72,7 +72,9 @@
       "-45deg"        -45
       "45deg"         45
       "0.25turn"      90
-      "100grad"       90))
+      "-0.5turn"      -180
+      "100grad"       90
+      "1rad"          (/ 180 #?(:clj Math/PI :cljs js/Math.PI))))
 
   (t/testing "stops are spread as CSS does"
     (t/is (= [0 0.1 0.4 0.7 1]

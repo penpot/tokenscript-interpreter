@@ -37,6 +37,15 @@ variable valid: Boolean = true;
 if (type(args.get(0)) == "deg") [
   angle = args.get(0).to_number();
   first_stop = 1;
+] elif (type(args.get(0)) == "turn") [
+  angle = args.get(0).to_number() * 360;
+  first_stop = 1;
+] elif (type(args.get(0)) == "grad") [
+  angle = args.get(0).to_number() * 0.9;
+  first_stop = 1;
+] elif (type(args.get(0)) == "rad") [
+  angle = args.get(0).to_number() * 180 / 3.141592653589793;
+  first_stop = 1;
 ] elif (is_list(args.get(0))) [
   if (type(args.get(0).get(0)) == "string") [
     if (args.get(0).get(0).lower() == "to") [
@@ -69,18 +78,6 @@ if (type(args.get(0)) == "deg") [
       ] else [
         valid = false;
       ];
-    ];
-  ] elif (args.get(0).length() == 2 && type(args.get(0).get(1)) == "string") [
-    word = args.get(0).get(1).lower();
-    if (word == "turn") [
-      angle = args.get(0).get(0) * 360;
-      first_stop = 1;
-    ] elif (word == "grad") [
-      angle = args.get(0).get(0) * 0.9;
-      first_stop = 1;
-    ] elif (word == "rad") [
-      angle = args.get(0).get(0) * 180 / 3.141592653589793;
-      first_stop = 1;
     ];
   ];
 ];
