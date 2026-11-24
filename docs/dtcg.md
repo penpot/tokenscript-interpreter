@@ -135,7 +135,7 @@ name is also a group is written as the group's `$root`.
 | Option | |
 |---|---|
 | `:profile :default` | The default: values as given, the type names as given, `$description` when the token has one. |
-| `:profile :dtcg` | DTCG 2025.10: literal dimensions as `{value, unit}` objects (`px` when there is no unit), colors as color objects in their color space (`srgb` for hex and HSL colors) with the `hex` the schemas convert them to, numeric font weights, numbers and opacities as numbers, typography fields under their DTCG names, and the type names below. References and expressions stay strings. |
+| `:profile :dtcg` | DTCG 2025.10: literal dimensions as `{value, unit}` objects (`px` when there is no unit), colors as color objects in their color space (`srgb` for hex and HSL colors) with the `hex` the schemas convert them to, numeric font weights, numbers and opacities as numbers, typography fields under their DTCG names, gradient angles in degrees as numbers, gradient stop positions as numbers from 0 to 1 (`50%` as `0.5`) and stop colors as color objects, and the type names below. References and expressions stay strings. |
 
 | Type | DTCG 2025.10 type |
 |---|---|
@@ -148,6 +148,9 @@ name is also a group is written as the group's `$root`.
 A `:dtcg` file reads back with these types and values, not the
 document it was written from: `spacing` comes back as `dimension`, `4`
 as `4px`.
+
+`dtcg/gradient-offset` reads a stop position as that number: `"50%"`
+and `"0.5"` are `0.5`, references and expressions nil.
 
 `$themes` and `$metadata` are written in both profiles: the Format
 Module has no sets, and the

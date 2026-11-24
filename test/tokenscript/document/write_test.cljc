@@ -8,6 +8,7 @@
 (ns tokenscript.document.write-test
   (:require
    [clojure.test :as t]
+   [tokenscript.document.dtcg :as dtcg]
    [tokenscript.document.read :as read]
    [tokenscript.document.write :as write]
    [tokenscript.test-helpers :as th]))
@@ -87,6 +88,60 @@
     (t/testing "reading them back gives the same colors"
       (t/is (= (assoc colors "hsl" {:value "#ff0000" :type "color"})
                (th/set-tokens (read/read {"s" written} {:multi-set? true}) "s"))))))
+
+(t/deftest write-gradients
+  (let [gradients {"form" {:value {"kind" "linear"
+                                   "angle" "45deg"
+                                   "stops" [{"color" "#ff0000" "position" "0%"}
+                                            {"color" "{brand}" "position" "66.67%"}
+                                            {"color" "#0000ff" "position" "{end}"}]}
+                           :type "gradient"}
+                   "plain" {:value {"kind" "radial" "angle" "90"
+                                    "stops" [{"color" "#000" "position" "0.25"}
+                                             {"color" "#fff" "position" 1}]}
+                            :type "gradient"}
+                   "turn" {:value {"kind" "linear" "angle" "0.25turn" "stops" []}
+                           :type "gradient"}
+                   "sum" {:value {"kind" "linear" "angle" "{a} * 2"
+                                  "stops" [{"color" "#000" "position" "25% + 25%"}]}
+                          :type "gradient"}
+                   "ref" {:value "{form}" :type "gradient"}}
+        document {:sets [{:name "s" :tokens gradients}] :themes []}
+        written (get (write/write document {:profile :dtcg}) "s")
+        value #(get-in written [% "$value"])]
+    (t/testing "angles in degrees and stop positions become numbers, colors color objects"
+      (t/is (= {"kind" "linear"
+                "angle" 45
+                "stops" [{"color" {"colorSpace" "srgb" "components" [1 0 0] "hex" "#ff0000"}
+                          "position" 0}
+                         {"color" "{brand}" "position" 0.6667}
+                         {"color" {"colorSpace" "srgb" "components" [0 0 1] "hex" "#0000ff"}
+                          "position" "{end}"}]}
+               (value "form")))
+      (t/is (= [90 [0.25 1]]
+               [(get (value "plain") "angle") (map #(get % "position") (get (value "plain") "stops"))])))
+    (t/testing "other angle units, references and expressions stay strings"
+      (t/is (= "0.25turn" (get (value "turn") "angle")))
+      (t/is (= "{a} * 2" (get (value "sum") "angle")))
+      (t/is (= "25% + 25%" (get-in (value "sum") ["stops" 0 "position"])))
+      (t/is (= "{form}" (value "ref"))))
+    (t/testing "the default profile writes them as given"
+      (t/is (= (get-in gradients ["form" :value])
+               (get-in (write/write document) ["s" "form" "$value"]))))))
+
+(t/deftest gradient-offset
+  (t/testing "a number is kept, a percentage becomes a fraction"
+    (t/is (== 0.5 (dtcg/gradient-offset "0.5")))
+    (t/is (== 0.5 (dtcg/gradient-offset ".5")))
+    (t/is (== 0.5 (dtcg/gradient-offset "50%")))
+    (t/is (== 0.6667 (dtcg/gradient-offset "66.67%")))
+    (t/is (== 0.101 (dtcg/gradient-offset "10.1%")))
+    (t/is (== 1 (dtcg/gradient-offset 1))))
+  (t/testing "the range is left to the gradient type"
+    (t/is (== 1.5 (dtcg/gradient-offset "150%"))))
+  (t/testing "references, expressions and other units are no offset"
+    (t/are [v] (nil? (dtcg/gradient-offset v))
+      "{stop.mid}" "25% + 25%" "10px" "" nil)))
 
 (t/deftest write-root-tokens
   (let [written (write/write {:sets [{:name "s" :tokens {"a" {:value "1" :type "number"}

@@ -17,8 +17,8 @@
   kept. Composite values (typography, shadow) keep their structure;
   their fields are read the same way. Shadows are normalized to a vector
   of objects with the DTCG keys. Written, literal dimensions, colors and
-  numbers become DTCG objects again; expressions and references stay
-  strings.
+  numbers become DTCG objects again, and gradient angles and stop
+  positions numbers; expressions and references stay strings.
 
   See docs/dtcg.md."
   (:require
@@ -491,6 +491,53 @@
                          (read-shadow-object shadow))))
           v)))
 
+(defn gradient-offset
+  "The offset of the literal stop position `v` of a gradient: a number
+  (`0.5`, `\"0.5\"`) as it is, a percentage (`\"50%\"`) as a fraction.
+  Nil for references, expressions and other units. The range is not
+  checked: the `gradient` token type does that."
+  [v]
+  (if (number? v)
+    v
+    (let [value (literal-number v)]
+      (cond
+        (sym/number? value) (:value value)
+        ;; Rounded to 10 places, so that 66.67% is 0.6667 and not with
+        ;; the noise of a binary division
+        (and (sym/number-with-unit? value) (= "%" (:unit value)))
+        (/ (u/js-round (* (:value value) 1e8)) 1e10)))))
+
+(defn- write-angle
+  "A literal angle in degrees, with or without `deg`, as a number. Other
+  units, references and expressions stay strings."
+  [v]
+  (let [value (literal-number v)]
+    (cond
+      (sym/number? value) (json-number (:value value))
+      (and (sym/number-with-unit? value) (= "deg" (str/lower-case (:unit value))))
+      (json-number (:value value))
+      :else v)))
+
+(defn- write-stop-position
+  [v]
+  (if-let [offset (gradient-offset v)]
+    (json-number offset)
+    v))
+
+(defn- write-gradient
+  [v]
+  (if-not (map? v)
+    v
+    (cond-> v
+      (contains? v "angle") (update "angle" write-angle)
+      (sequential? (get v "stops"))
+      (update "stops" (fn [stops]
+                        (mapv (fn [stop]
+                                (cond-> stop
+                                  (and (map? stop) (contains? stop "color")) (update "color" write-color)
+                                  (and (map? stop) (contains? stop "position")) (update "position" write-stop-position)))
+                              stops))))))
+
 (defn write-value
   "Writes the value `v` of a token of `type` (a type name of the bundled
   token types) as DTCG 2025.10: literal dimensions, colors and numbers
@@ -502,4 +549,5 @@
     ("number" "fontWeight" "opacity") (write-number v)
     "typography" (write-typography v)
     "shadow" (write-shadow v)
+    "gradient" (write-gradient v)
     v))
