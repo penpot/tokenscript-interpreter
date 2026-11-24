@@ -19,9 +19,9 @@
   (:require
    [clojure.walk :as walk]
    [tokenscript.errors :as err]
-   [tokenscript.parser :as parser]
    [tokenscript.registry :as reg]
    [tokenscript.schema-uri :as suri]
+   [tokenscript.schemas :as schemas]
    [tokenscript.util :as u]))
 
 (def pixel-unit-uri "/api/v1/core/px-unit/0/")
@@ -81,7 +81,7 @@
                  {:data {:kind "unit" :uri uri
                          :reason :invalid-shape}}))
     (cond-> (update spec :conversions #(vec (or % [])))
-      (:to_absolute spec) (assoc-in [:to_absolute :ast] (:ast (parser/parse (get-in spec [:to_absolute :script])))))))
+      (:to_absolute spec) (assoc-in [:to_absolute :ast] (schemas/script-ast (get-in spec [:to_absolute :script]))))))
 
 (defn- register-spec
   [registry uri spec]

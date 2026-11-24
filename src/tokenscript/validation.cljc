@@ -56,8 +56,7 @@
   "`{:error code :data ..}` of the validation script for `value`, nil when
   it is valid. `:data` is only there for some codes."
   [config {:keys [ast script]} value]
-  (if (nil? ast)
-    {:error "VALIDATION_INVALID_SCRIPT" :data {:script script}}
+  (if-let [ast (force ast)]
     (try
       (let [result (interp/interpret ast {:references {"input" value} :config config})]
         (cond
@@ -65,7 +64,8 @@
           (sym/string? result) {:error (:value result)}
           :else {:error "VALIDATION_INVALID_RESULT"}))
       (catch #?(:clj Throwable :cljs :default) e
-        {:error "VALIDATION_ERROR" :data (err/cause-data e)}))))
+        {:error "VALIDATION_ERROR" :data (err/cause-data e)}))
+    {:error "VALIDATION_INVALID_SCRIPT" :data {:script script}}))
 
 ;; Script results only depend on the type and the value. Scalar values are
 ;; immutable and repeat within a build and across builds, so their results

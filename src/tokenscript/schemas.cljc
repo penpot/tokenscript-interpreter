@@ -23,6 +23,11 @@
   JSON, decoded on first use. URIs stay path URIs: schemas are
   identified by them, never fetched.
 
+  `script-ast` gives the AST of a script to register. The scripts of
+  these schemas are checked when the library is built, so they are
+  parsed the first time they run: a config with all of them is cheap to
+  make, and the scripts it never runs are never parsed.
+
   See docs/schemas.md."
   #?(:clj
      (:require
@@ -31,6 +36,8 @@
       [clojure.string :as str]
       [tokenscript.parser :as parser]
       [tokenscript.util :as u]))
+  #?(:cljs (:require
+            [tokenscript.parser :as parser]))
   #?(:cljs (:require-macros [tokenscript.schemas :refer [inline-json]])))
 
 ;; Reading --------------------------------------------------------------------
@@ -139,14 +146,14 @@
 
 ;; Checks ---------------------------------------------------------------------
 
-#?(:clj
-   (defn- scripts
-     [{:keys [schema]}]
-     (case (:type schema)
-       "color" (map #(get-in % [:script :script]) (concat (:initializers schema) (:conversions schema)))
-       "function" [(get-in schema [:script :script])]
-       "token" (keep :script [(:validation schema)])
-       nil)))
+(defn- scripts
+  "The script texts of the schema `{:uri :schema}`."
+  [{:keys [schema]}]
+  (case (:type schema)
+    "color" (map #(get-in % [:script :script]) (concat (:initializers schema) (:conversions schema)))
+    "function" [(get-in schema [:script :script])]
+    "token" (keep :script [(:validation schema)])
+    nil))
 
 #?(:clj
    (defn- referenced-uris
@@ -213,3 +220,23 @@
   "The shipped schemas, `{:uri :schema}` maps."
   []
   @schemas*)
+
+;; One delay per shipped script, so a script shared by schemas or configs
+;; is parsed once.
+(def ^:private shipped-asts*
+  (delay
+    (into {}
+          (comp (mapcat scripts)
+                (filter string?)
+                (distinct)
+                (map (fn [text] [text (delay (:ast (parser/parse text)))])))
+          (schemas))))
+
+(defn script-ast
+  "AST of the script `text`, to register: a delay, parsed the first time
+  it is forced, for the scripts of the shipped schemas, which are checked
+  when the library is built; any other script is parsed now, so a
+  malformed one fails when it is registered. Force it before running it."
+  [text]
+  (or (get @shipped-asts* text)
+      (:ast (parser/parse text))))

@@ -26,7 +26,10 @@ the schema `:type`: `color`, `function`, `token` or `constants`.
 
 A config is an immutable `Config` record; registering returns a new one.
 Scripts are parsed once, when they are registered, and a malformed
-schema raises `:config/invalid-specification`.
+schema raises `:config/invalid-specification`. The scripts of the
+bundled schemas are the exception: they are checked when the library is
+built and parsed the first time they run, so `default-config` parses
+nothing and the scripts a config never runs are never parsed.
 
 ## URIs
 

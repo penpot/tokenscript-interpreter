@@ -94,11 +94,13 @@
 (declare ^:private eval-node)
 
 (defn- run-script
-  "Evaluates a registered script AST with `references` under `config`."
+  "Evaluates a registered script AST, or a delay of it (see
+  `schemas/script-ast`), with `references` under `config`."
   [config ast references]
-  (if (nil? ast)
-    ""
-    (unwrap-return (eval-node (make-ctx {:config config :references references}) ast))))
+  (let [ast (force ast)]
+    (if (nil? ast)
+      ""
+      (unwrap-return (eval-node (make-ctx {:config config :references references}) ast)))))
 
 (defn execute-initializer
   "Runs the color initializer registered for `keyword` with `args`."
