@@ -5,20 +5,27 @@
 ;; Copyright (c) KALEIDOS SUBSIDIARY SL
 
 (ns tokenscript.document.dtcg
-  "What a DTCG token file means: which nodes are tokens, its type names,
-  JSON pointers, and the object values of the Format Module 2025.10, read
-  as tokenscript source and written back.
+  "Works out what a DTCG token file means: which nodes are tokens, its
+  type names, its JSON pointers and the object values of the Format
+  Module 2025.10. It reads them as tokenscript source and writes them
+  back.
 
-  Read, the object values become strings, so that tokenscript resolves
-  them and reports their errors (a missing token, a wrong type) as it
-  does for any token: `{value: 16, unit: \"px\"}` is `\"16px\"`, a color
-  object is the color in its color space, `oklch(0.628, 0.2577, 29.23)`,
-  and a JSON pointer is a reference. Strings, numbers and booleans are
-  kept. Composite values (typography, shadow) keep their structure;
-  their fields are read the same way. Shadows are normalized to a vector
-  of objects with the DTCG keys. Written, literal dimensions, colors and
-  numbers become DTCG objects again, and gradient angles and stop
-  positions numbers; expressions and references stay strings.
+  On read, the object values become strings. Tokenscript then resolves
+  them and reports their errors, such as a missing token or a wrong
+  type, as for any token:
+
+  - `{value: 16, unit: \"px\"}` becomes `\"16px\"`.
+  - A color object becomes the color in its color space,
+    `oklch(0.628, 0.2577, 29.23)`.
+  - A JSON pointer becomes a reference.
+
+  Strings, numbers and booleans stay as they are. Composite values
+  (typography, shadow) keep their structure, and their fields are read
+  the same way. Shadows become a vector of objects with the DTCG keys.
+
+  On write, literal dimensions, colors and numbers become DTCG objects
+  again. Gradient angles and stop positions become numbers. Expressions
+  and references stay strings.
 
   See docs/dtcg.md."
   (:require
@@ -346,9 +353,10 @@
     :else v))
 
 (defn read-gradient
-  "A gradient value as a map with its `kind`, its `angle` and its
-  `stops`. A list of stops, which is how the DTCG drafts write a gradient,
-  is a linear gradient. References are kept."
+  "Reads a gradient value as a map with its `kind`, its `angle` and its
+  `stops`. The DTCG drafts write a gradient as a list of stops. This
+  function reads such a list as a linear gradient. References stay as
+  they are."
   [v]
   (if (sequential? v)
     {"kind" "linear" "stops" (vec v)}
@@ -492,10 +500,11 @@
           v)))
 
 (defn gradient-offset
-  "The offset of the literal stop position `v` of a gradient: a number
-  (`0.5`, `\"0.5\"`) as it is, a percentage (`\"50%\"`) as a fraction.
-  Nil for references, expressions and other units. The range is not
-  checked: the `gradient` token type does that."
+  "Gives the offset of the literal stop position `v` of a gradient. A
+  number (`0.5`, `\"0.5\"`) stays as it is. A percentage (`\"50%\"`)
+  becomes a fraction. Gives nil for references, expressions and other
+  units. This function does not check the range. The `gradient` token
+  type checks it."
   [v]
   (if (number? v)
     v
@@ -508,8 +517,8 @@
         (/ (u/js-round (* (:value value) 1e8)) 1e10)))))
 
 (defn- write-angle
-  "A literal angle in degrees, with or without `deg`, as a number. Other
-  units, references and expressions stay strings."
+  "Writes a literal angle in degrees, with or without `deg`, as a number.
+  Angles in other units, references and expressions stay strings."
   [v]
   (let [value (literal-number v)]
     (cond

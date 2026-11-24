@@ -5,21 +5,23 @@
 ;; Copyright (c) KALEIDOS SUBSIDIARY SL
 
 (ns tokenscript.importers.syntax
-  "The CSS syntax the importers read: cuts the text into tokens (numbers
-  with their unit, names, hex colors, token references, punctuation) and
-  parses calls with their arguments, as CSS nests them. It does no
-  arithmetic, so `rgb(255 0 0 / 50%)` keeps its slash and `red -20%` is
-  a name and a number: what tokenscript would read as a division or a
-  subtraction stays for the importer to rewrite.
+  "Reads the CSS syntax that the importers share. It splits the text into
+  tokens: numbers with their unit, names, hex colors, token references
+  and punctuation. It parses each call with its arguments, nested as in
+  CSS.
 
-  Each importer adds its own entry point and rewrite rules."
+  It does no arithmetic. So `rgb(255 0 0 / 50%)` keeps its slash, and
+  `red -20%` stays a name and a number. Tokenscript would read these as
+  a division and a subtraction. The importer rewrites them.
+
+  Each importer adds its own entry point and its own rewrite rules."
   (:require
    [clojure.string :as str]))
 
 ;; Tokenizer ------------------------------------------------------------------
 
 (defn code-at
-  "The character code at `index` of `text`."
+  "Gives the character code at `index` of `text`."
   [text index]
   #?(:clj  (int (.charAt ^String text (int index)))
      :cljs (.charCodeAt ^string text index)))
@@ -33,7 +35,7 @@
   (or (<= 65 code 90) (<= 97 code 122)))
 
 (defn hex-digit?
-  "Whether the character code is a hexadecimal digit."
+  "Checks whether the character code is a hexadecimal digit."
   [code]
   (or (digit? code) (<= 65 code 70) (<= 97 code 102)))
 
@@ -46,7 +48,8 @@
   (or (letter? code) (digit? code) (= 45 code) (= 95 code)))
 
 (defn- skip-while
-  "The first index from `start` whose character `pred?` doesn't hold for."
+  "Gives the first index from `start` where `pred?` is false for the
+  character."
   [text start pred?]
   (loop [index start]
     (if (and (< index (count text)) (pred? (code-at text index)))
@@ -54,8 +57,8 @@
       index)))
 
 (defn- number-start?
-  "Whether a number starts at `index`: digits, or a dot or a sign
-  followed by them."
+  "Checks whether a number starts at `index`. A number starts with
+  digits, or with a dot or a sign before digits."
   [text index]
   (let [code   (code-at text index)
         second (when (< (inc index) (count text)) (code-at text (inc index)))
@@ -68,7 +71,8 @@
                  (and (= 46 second) (some? third) (digit? third)))))))
 
 (defn- read-number
-  "The number at `index` with its unit, if it has one (`50%`, `90deg`)."
+  "Reads the number at `index` and its unit, if it has one (`50%`,
+  `90deg`)."
   [text index]
   (let [sign-end   (if (or (= 43 (code-at text index)) (= 45 (code-at text index)))
                      (inc index)
@@ -91,8 +95,8 @@
      :end   unit-end}))
 
 (defn- read-reference
-  "The token reference at `index`, up to its closing brace. Nil when it
-  is never closed."
+  "Reads the token reference at `index`, up to its closing brace. Gives
+  nil when the reference has no closing brace."
   [text index]
   (loop [position (inc index)
          depth    1]
@@ -106,7 +110,8 @@
           :else        (recur (inc position) depth))))))
 
 (defn- read-token
-  "The token at `index`, nil when the text can't be one."
+  "Reads the token at `index`. Gives nil when the text there cannot be a
+  token."
   [text index]
   (let [code (code-at text index)]
     (cond
@@ -136,8 +141,8 @@
       {:type :punctuation :start index :end (inc index)})))
 
 (defn tokenize
-  "Cuts `text` into tokens, each with the range of the text it is. Nil
-  when the text holds something the importers don't read."
+  "Splits `text` into tokens. Each token keeps its range in `text`. Gives
+  nil when `text` contains something that the importers do not read."
   [text]
   (loop [index  0
          tokens []]
@@ -159,14 +164,15 @@
 ;; Parser ---------------------------------------------------------------------
 
 (defn punctuation?
-  "Whether `token` is the punctuation `text`."
+  "Checks whether `token` is the punctuation mark `text`."
   [token text]
   (and (= :punctuation (:type token))
        (= text (:text token))))
 
 (defn parse-value
-  "The value at `index`: a call with its arguments, or a single token.
-  Returns it with the index after it, nil when the tokens are no value."
+  "Parses the value at `index`: a call with its arguments, or a single
+  token. Gives the value and the index after it. Gives nil when the
+  tokens are not a value."
   [text tokens index]
   (let [token (get tokens index)
         open  (get tokens (inc index))]

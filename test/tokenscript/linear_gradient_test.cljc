@@ -5,8 +5,8 @@
 ;; Copyright (c) KALEIDOS SUBSIDIARY SL
 
 (ns tokenscript.linear-gradient-test
-  "The CSS `linear-gradient()` of the bundle, written as a tokenscript
-  schema function."
+  "Tests the CSS `linear-gradient()` of the bundle. The bundle defines it
+  as a tokenscript schema function."
   (:require
    [clojure.string :as str]
    [clojure.test :as t]
@@ -20,14 +20,16 @@
   (delay (tsc/default-config)))
 
 (defn- whole
-  "Whole numbers as integers, as the JVM and ClojureScript differ."
+  "Gives whole numbers as integers, because the JVM and ClojureScript
+  differ here."
   [n]
   #?(:clj (if (== n (long n)) (long n) n)
      :cljs n))
 
 (defn- plain
-  "The symbol as Clojure data: colors as hex, units dropped (a percentage
-  is a fraction), as a consumer reads the resolved value of a token."
+  "Converts the symbol to Clojure data, as a consumer reads the resolved
+  value of a token. Colors become hex. It drops the units, and a
+  percentage becomes a fraction."
   [v]
   (cond
     (sym/null? v)       :null
@@ -39,8 +41,8 @@
     :else               (sym/value v)))
 
 (defn- gradient
-  "The gradient `value` resolves to (with `{c}` as `#ff0000` and `{p}` as
-  20%), or the error code."
+  "Resolves `value` as a gradient token, with `{c}` as `#ff0000` and
+  `{p}` as `20%`. Gives the gradient or the error code."
   [value]
   (let [res (proc/build {"c" {:value "#ff0000"}
                          "p" {:value "20%"}

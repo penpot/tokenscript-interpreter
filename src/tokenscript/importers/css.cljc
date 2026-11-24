@@ -5,18 +5,25 @@
 ;; Copyright (c) KALEIDOS SUBSIDIARY SL
 
 (ns tokenscript.importers.css
-  "Imports CSS values as tokenscript: reads the CSS (or tokenscript) text
-  of a linear gradient and writes it the way the `linear-gradient()`
-  function of the bundled schemas takes it, or as the value of a
-  `gradient` token.
+  "Imports CSS values as tokenscript. It reads the CSS or tokenscript
+  text of a linear gradient. It writes the gradient in the form that the
+  `linear-gradient()` function of the bundled schemas takes, or as the
+  value of a `gradient` token.
 
-  The text is tokenized and parsed, not matched: colors, calls and
-  token references nest as they do in CSS. What tokenscript does not
-  read the CSS way is rewritten: the direction becomes an angle in
-  degrees, the CSS color functions get commas and their slash alpha
-  syntax (`rgb(255 0 0 / 50%)`, which tokenscript reads as a division)
-  becomes a fourth channel of the `rgba` or `hsla` of CSS, and stops
-  without a position get the one CSS gives them. Token references stay.
+  The importer tokenizes and parses the text. It does not match the text
+  with patterns. So colors, calls and token references nest as they do
+  in CSS.
+
+  The importer rewrites the CSS that tokenscript does not read as CSS
+  does:
+
+  - The direction becomes an angle in degrees.
+  - The CSS color functions get commas.
+  - Their slash alpha syntax becomes a fourth channel of the `rgba` or
+    `hsla` of CSS. Tokenscript reads `rgb(255 0 0 / 50%)` as a division.
+  - A stop without a position gets the position that CSS gives it.
+
+  Token references stay as they are.
 
   See docs/importers.md."
   (:require
@@ -27,15 +34,16 @@
 ;; Declarations ---------------------------------------------------------------
 
 (defn- statements
-  "The tokens of each statement of `tokens`, which a `;` ends."
+  "Splits `tokens` into statements. A `;` ends each statement."
   [tokens]
   (->> (partition-by #(punctuation? % ";") tokens)
        (remove #(punctuation? (first %) ";"))
        (map vec)))
 
 (defn- declaration-start
-  "The index the value of a statement starts at: after `background:` or
-  `background-image:` when it is a CSS declaration."
+  "Finds the index where the value of a statement starts. In a CSS
+  declaration, the value starts after `background:` or
+  `background-image:`."
   [tokens]
   (let [[property colon] tokens]
     (if (and (= :name (:type property))
@@ -46,8 +54,9 @@
       0)))
 
 (defn- parse-statement
-  "The call a statement is: alone, or as the value of a `background`
-  declaration. Nil when it is anything else."
+  "Parses the call in a statement. The call is the whole statement, or
+  the value of a `background` declaration. Gives nil for any other
+  statement."
   [text tokens]
   (when-let [[value index] (parse-value text tokens (declaration-start tokens))]
     (when (and (= :call (:type value))
@@ -55,10 +64,10 @@
       value)))
 
 (defn- parse-call
-  "The first call named `call-name` in `text`, which is a call or CSS. The
-  declarations that are not such a call are left out, like the fallback
-  color and the vendor prefixed lines CSS tools write. Nil when there is
-  none."
+  "Finds the first call named `call-name` in `text`. `text` is a call or
+  CSS. The function skips the declarations that are not such a call,
+  such as the fallback color and the vendor-prefixed lines that CSS
+  tools write. Gives nil when there is no such call."
   [text call-name]
   (when-let [tokens (tokenize text)]
     (->> (statements tokens)
@@ -87,8 +96,9 @@
    "rad"  (/ 180 #?(:clj Math/PI :cljs js/Math.PI))})
 
 (def ^:private color-functions
-  "The CSS color functions the bundled schemas take, with their name
-  for the three channels and for the three channels and an alpha."
+  "The CSS color functions that the bundled schemas take. Each function
+  has a name for three channels, and a name for three channels and an
+  alpha."
   {"rgb"  ["rgb" "rgba"]
    "rgba" ["rgb" "rgba"]
    "hsl"  ["hsl" "hsla"]
@@ -108,9 +118,9 @@
     (str/lower-case (:text value))))
 
 (defn- direction->angle
-  "The angle in degrees, as a number, of the first argument of a gradient
-  when it is its direction: `to right`, `0.25turn`. Nil when it is a
-  color stop."
+  "Gives the angle in degrees, as a number, when the first argument of a
+  gradient is its direction, such as `to right` or `0.25turn`. Gives nil
+  when the argument is a color stop."
   [[value & more]]
   (cond
     (and (= "to" (name-of value)) (<= 1 (count more) 2) (every? name-of more))
@@ -127,10 +137,11 @@
        (every? hex-digit? (map #(code-at text %) (range 1 (count text))))))
 
 (defn- color->text
-  "A color the way tokenscript takes it. A call of the CSS color functions
-  gets commas, its slash before the alpha goes, and it is the `rgba` or
-  `hsla` of CSS when it has an alpha. Other calls and references stay as
-  written; nil for anything that is no color."
+  "Writes a color in the form that tokenscript takes. A call of a CSS
+  color function gets commas and loses the slash before its alpha. With
+  an alpha, the call becomes the `rgba` or `hsla` of CSS. Other calls
+  and references stay as written. Gives nil for anything that is not a
+  color."
   [{:keys [type text name args]}]
   (case type
     :hash      (when (hex-color? text) text)
@@ -146,7 +157,7 @@
     nil))
 
 (defn- position-percent
-  "The percentage of a position, `0` standing for `0%`."
+  "Gives the percentage of a position. `0` means `0%`."
   [{:keys [type value unit]}]
   (when (= :number type)
     (cond
@@ -154,16 +165,17 @@
       (and (nil? unit) (zero? value)) 0)))
 
 (defn- position-of
-  "A stop position: a percentage, or a reference to one."
+  "Reads a stop position: a percentage, or a reference to a percentage."
   [value]
   (or (position-percent value)
       (when (= :reference (:type value))
         (:text value))))
 
 (defn- arg->stops
-  "The color stops an argument stands for: one, two when it has two
-  positions, none for a color hint (a lone percentage). Nil when it is
-  none of these. A stop without a position has a nil one."
+  "Gives the color stops of an argument. A color with one position or
+  with none gives one stop. A color with two positions gives two stops.
+  A color hint, a lone percentage, gives no stop. Gives nil for any
+  other argument. A stop without a position has a nil position."
   [[color & positions :as arg]]
   (cond
     (empty? arg)
@@ -181,9 +193,12 @@
             (mapv (fn [position] {:color color :position position}) positions)))))))
 
 (defn- spread-positions
-  "Gives the stops without a position one, as CSS does: the first stop
-  starts at 0%, the last one ends at 100% and the ones in between are
-  spread evenly between the stops around them that have one."
+  "Gives a position to each stop that has none, as CSS does:
+
+  - The first stop gets 0%.
+  - The last stop gets 100%.
+  - The other stops get positions spread evenly between the nearest
+    stops that have a position."
   [stops]
   (let [last-index (dec (count stops))
         stops      (-> stops
@@ -206,20 +221,22 @@
           stops)))
 
 (defn- format-position
-  "A position outside of the gradient moves to its end."
+  "Moves a position outside the gradient to the nearest end of the
+  gradient."
   [position]
   (if (number? position)
     (str (format-number (max 0 (min 100 position))) "%")
     position))
 
 (defn linear-gradient
-  "Reads a CSS `linear-gradient()` (or the tokenscript one), also as a
-  `background` declaration (or several, as CSS tools copy them), as the
-  value of a `gradient` token: a map
-  with its `\"kind\"`, its `\"angle\"` in degrees and its `\"stops\"`, each
-  with a `\"color\"` and a `\"position\"` in percent. See the namespace
-  for what is rewritten. Returns nil for anything else, like a radial or
-  a repeating gradient or a stop positioned in pixels."
+  "Reads a CSS or tokenscript `linear-gradient()` as the value of a
+  `gradient` token. The text can also be a `background` declaration, or
+  several declarations as CSS tools copy them. The value is a map with
+  its `\"kind\"`, its `\"angle\"` in degrees and its `\"stops\"`. Each
+  stop has a `\"color\"` and a `\"position\"` in percent. The namespace
+  docstring lists the rewrites. Gives nil for any other text, such as a
+  radial gradient, a repeating gradient or a stop with a position in
+  pixels."
   [text]
   (when (string? text)
     (when-let [{:keys [args]} (parse-call text "linear-gradient")]
@@ -248,8 +265,8 @@
          ")")))
 
 (defn linear-gradient->tokenscript
-  "The tokenscript `linear-gradient()` for a CSS one, nil when `text` is
-  not a linear gradient."
+  "Writes a CSS `linear-gradient()` as a tokenscript `linear-gradient()`.
+  Gives nil when `text` is not a linear gradient."
   [text]
   (some-> (linear-gradient text)
           (gradient->tokenscript)))

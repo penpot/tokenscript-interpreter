@@ -36,8 +36,8 @@
 (def gradian-unit-uri "/api/v1/core/grad-unit/0/")
 
 (defn- angle-spec
-  "An angle unit that converts to and from degrees, `degrees` of which
-  make one of it."
+  "Makes the spec of an angle unit that converts to and from degrees. One
+  of the unit is equal to `degrees` degrees."
   [name keyword description degrees]
   {:name name :type "absolute" :keyword keyword
    :description description
@@ -129,8 +129,8 @@
   (->UnitRegistry {} {} {} {} (reg/new-cache)))
 
 (defn default-registry
-  "Registry with the built in units (`px`, `rem`, `%`, `s`, `ms`, `ch`,
-  and the angles `deg`, `turn`, `rad`, `grad`)."
+  "Makes a registry with the built-in units: `px`, `rem`, `%`, `s`, `ms`,
+  `ch`, and the angles `deg`, `turn`, `rad` and `grad`."
   []
   (reduce (fn [registry [uri spec]] (reg/register registry uri spec)) (empty-registry) default-specs))
 

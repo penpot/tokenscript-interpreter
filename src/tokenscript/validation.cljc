@@ -184,10 +184,10 @@
       [])))
 
 (defn- validate-shape
-  "Failures of the fields of `value`, which `shape` describes: a field
-  of a token type (`url`), a list (`items`) or an object
-  (`properties`). Lists and objects nest. A value of another shape has
-  no fields to validate."
+  "Finds the fields of `value` that fail validation. `shape` describes
+  the value: a field of a token type (`url`), a list (`items`) or an
+  object (`properties`). Lists and objects nest. A value of a different
+  shape has no fields to validate."
   [config value {:keys [type url items properties]} visited path depth]
   (cond
     (and (= "token" type) url)
