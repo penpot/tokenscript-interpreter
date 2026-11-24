@@ -127,4 +127,13 @@
               "stops" [{"color" "#ff000080" "position" 0}
                        {"color" "#00ff55" "position" 1}]}
              (gradient (css/linear-gradient->tokenscript
-                        "linear-gradient(to right, rgb(255 0 0 / 50%), #00ff55)"))))))
+                        "linear-gradient(to right, rgb(255 0 0 / 50%), #00ff55)")))))
+
+  (t/testing "a fade to transparent evaluates, though tokenscript has no transparent"
+    (t/is (= :null (gradient "linear-gradient(to bottom, transparent, black)")))
+    (t/is (= {"kind" "linear"
+              "angle" 180
+              "stops" [{"color" "#00000000" "position" 0}
+                       {"color" "#000000" "position" 1}]}
+             (gradient (css/linear-gradient->tokenscript
+                        "linear-gradient(to bottom, transparent, black)"))))))

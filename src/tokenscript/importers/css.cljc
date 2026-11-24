@@ -139,13 +139,18 @@
 (defn- color->text
   "Writes a color in the form that tokenscript takes. A call of a CSS
   color function gets commas and loses the slash before its alpha. With
-  an alpha, the call becomes the `rgba` or `hsla` of CSS. Other calls
-  and references stay as written. Gives nil for anything that is not a
-  color."
+  an alpha, the call becomes the `rgba` or `hsla` of CSS. `transparent`
+  becomes `#00000000`, the black with no alpha that CSS makes of it.
+  Other names, calls and references stay as written. Gives nil for
+  anything that is not a color, `currentcolor` included: it is the color
+  of an element, which a token has none of."
   [{:keys [type text name args]}]
   (case type
     :hash      (when (hex-color? text) text)
-    :name      text
+    :name      (case (str/lower-case text)
+                 "transparent"  "#00000000"
+                 "currentcolor" nil
+                 text)
     :reference text
     :call      (if-let [[opaque translucent] (get color-functions name)]
                  (let [values (->> (apply concat args)

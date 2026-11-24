@@ -55,6 +55,11 @@
              (map #(get % "color")
                   (stops "linear-gradient(red, #00f, #ff000080, hsl(120, 100%, 50%), oklch(0.6 0.2 30))")))))
 
+  (t/testing "transparent is black with no alpha, in any case"
+    (t/is (= ["#00000000" "black" "#00000000"]
+             (map #(get % "color")
+                  (stops "linear-gradient(transparent, black, Transparent)")))))
+
   (t/testing "CSS color functions get commas, and the slash before the alpha goes"
     (t/is (= ["rgba(255, 0, 0, 50%)" "rgba(255, 209, 102, 0.6)" "hsla(120deg, 100%, 50%, 0.5)" "rgba(1, 2, 3, .4)"
               "rgba(255, 0, 0)" "hsl(1, 0.5, 0.5)"]
@@ -121,6 +126,8 @@
       "linear-gradient(red 10px, blue 20px)"
       "linear-gradient(red 10% 20% 30%, blue)"
       "linear-gradient(#12345, blue)"
+      "linear-gradient(currentcolor, blue)"
+      "linear-gradient(red, currentColor)"
       "linear-gradient({color.brand, blue)"
       "linear-gradient(red, blue), linear-gradient(green, yellow)"
       "linear-gradient(red, blue) no-repeat"

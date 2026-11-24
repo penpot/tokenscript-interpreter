@@ -36,6 +36,8 @@ is. The importer rewrites what it does not:
   their slash alpha syntax, a division in tokenscript, becomes a fourth
   channel of the `rgba` or `hsla` of CSS: `rgb(255 0 0 / 50%)` is
   `rgba(255, 0, 0, 50%)`.
+- `transparent`, which tokenscript has no name for, becomes `#00000000`:
+  black with no alpha, as CSS defines it.
 - Every stop gets a position in percent: the ones CSS gives stops without
   one, clamped to 0%-100%. A color with two positions is two stops and a
   color hint is left out.
@@ -47,4 +49,5 @@ reference) and token references anywhere stay as written.
 
 Text that is not a `linear-gradient()` gives nil: radial, conic and
 repeating gradients, a stop positioned in pixels, several gradients, an
-unbalanced call.
+unbalanced call, or a `currentcolor` stop: it is the color of an
+element, which a token has none of.
