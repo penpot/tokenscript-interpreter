@@ -47,6 +47,16 @@
   [v]
   (and (map? v) (keyword? (:node v))))
 
+(defn number-node?
+  "Whether `node` is a literal number: a number, a number with a unit
+  (`16px`), or either of them negated (`-4px`)."
+  [{:keys [node] :as ast}]
+  (case node
+    :num true
+    :element-with-unit (= :num (:node (:ast-node ast)))
+    :unary-op (and (= "-" (:value (:op-token ast))) (number-node? (:expr ast)))
+    false))
+
 (defn type-decl-name
   "Full type name of a type declaration, e.g. `Color.RGB`."
   [{:keys [base-type sub-types]}]

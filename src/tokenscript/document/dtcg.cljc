@@ -30,6 +30,7 @@
   See docs/dtcg.md."
   (:require
    [clojure.string :as str]
+   [tokenscript.ast :as ast]
    [tokenscript.colors :as colors]
    [tokenscript.core :as tsc]
    [tokenscript.errors :as err]
@@ -375,22 +376,6 @@
 
 ;; Writing values -------------------------------------------------------------
 
-(defn- number-node?
-  [{:keys [node] :as ast}]
-  (case node
-    :num true
-    :element-with-unit (= :num (:node (:ast-node ast)))
-    :unary-op (and (= "-" (:value (:op-token ast))) (number-node? (:expr ast)))
-    false))
-
-(defn- literal-number
-  "The number of a literal number or dimension (`1.5`, `16px`, `-4px`).
-  Nil for references and other expressions, which stay strings."
-  [v]
-  (when-let [ast (and (string? v) (err/language-result #(:ast (parser/parse v {:mode :inline}))))]
-    (when (number-node? ast)
-      (err/language-result #(interp/interpret ast)))))
-
 (defn- json-number
   "Whole numbers as integers, so the file says `16`, not `16.0`."
   [n]
@@ -403,7 +388,7 @@
 
 (defn- write-dimension
   [v]
-  (let [value (literal-number v)]
+  (let [value (tsc/literal-number v)]
     (cond
       (number? v) {"value" v "unit" "px"}
       (sym/number? value) {"value" (json-number (:value value)) "unit" "px"}
@@ -413,7 +398,7 @@
 
 (defn- write-number
   [v]
-  (let [value (literal-number v)]
+  (let [value (tsc/literal-number v)]
     (if (sym/number? value) (json-number (:value value)) v)))
 
 (def ^:private written-color-spaces
@@ -430,7 +415,7 @@
   [{:keys [node name args]}]
   (and (= :function-call node)
        (some? (colors/initializer (:colors (tsc/default-config)) name))
-       (every? number-node? args)))
+       (every? ast/number-node? args)))
 
 (defn- literal-color
   "The color of a hex color or a color call. Nil for references and
@@ -508,7 +493,7 @@
   [v]
   (if (number? v)
     v
-    (let [value (literal-number v)]
+    (let [value (tsc/literal-number v)]
       (cond
         (sym/number? value) (:value value)
         ;; Rounded to 10 places, so that 66.67% is 0.6667 and not with
@@ -520,7 +505,7 @@
   "Writes a literal angle in degrees, with or without `deg`, as a number.
   Angles in other units, references and expressions stay strings."
   [v]
-  (let [value (literal-number v)]
+  (let [value (tsc/literal-number v)]
     (cond
       (sym/number? value) (json-number (:value value))
       (and (sym/number-with-unit? value) (= "deg" (str/lower-case (:unit value))))

@@ -27,10 +27,16 @@
             \"double\" {:value \"{base} * 2px\"}})
     ;; => {:tokens {...} :issues nil :graph {...} :state ...}"
   (:require
+   [tokenscript.ast :as ast]
    [tokenscript.config :as config]
+   [tokenscript.errors :as err]
    [tokenscript.interpreter :as interp]
+   [tokenscript.parser :as parser]
    [tokenscript.processor :as processor]
-   [tokenscript.schemas :as schemas]))
+   [tokenscript.registry :as reg]
+   [tokenscript.schemas :as schemas]
+   [tokenscript.symbols :as sym]
+   [tokenscript.units :as units]))
 
 (def ^:private default-config*
   (delay (config/register-schemas (config/make-config) (schemas/schemas))))
@@ -53,3 +59,28 @@
   ([color] (color->hex (default-config) color))
   ([config color]
    (interp/color->type config color "hex")))
+
+(defn literal-number
+  "Reads `text` as a literal number: a number (`50`, `.5`, `-4`) or a
+  number with a unit (`45deg`, `50%`, `16px`). Gives its number symbol.
+  Gives nil for anything else, such as a reference or an expression
+  (`{size}`, `{size} * 2`), which only has a value once it resolves."
+  [text]
+  (when-let [ast (and (string? text)
+                      (err/language-result #(:ast (parser/parse text {:mode :inline}))))]
+    (when (ast/number-node? ast)
+      (err/language-result #(interp/interpret ast)))))
+
+(defn convert-number
+  "Converts `number`, a number with a unit, to the unit `unit`, such as
+  `\"deg\"`, with the conversions of the unit registry: `0.25turn` is
+  `90deg`. Gives nil when the registry has no conversion between the two
+  units, as from `px` to `deg`, or when `number` has no unit."
+  ([number unit] (convert-number (default-config) number unit))
+  ([config number unit]
+   (let [registry (:units config)
+         source   (when (sym/number-with-unit? number)
+                    (units/uri-by-keyword registry (:unit number)))
+         target   (units/uri-by-keyword registry unit)]
+     (when (and source target (reg/conversion-steps registry source target))
+       (interp/convert-unit config number target)))))

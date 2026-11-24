@@ -42,6 +42,8 @@ It is a port of the TypeScript reference implementation
 | `default-config` | The config with the bundled schemas, built once |
 | `build` | Resolves token data (`{name {:value .. :type ..}}`) or an ordered vector of token sets |
 | `color->hex` | Converts any color to a hex color, keeping alpha |
+| `literal-number` | Reads text that is a literal number (`50`, `.5`) or a number with a unit (`45deg`, `50%`) as its number symbol; nil for references and expressions |
+| `convert-number` | Converts a number with a unit to another unit with the conversions of the unit registry (`0.25turn` to `90deg`); nil without a conversion |
 
 Anything else is used from the implementation namespaces directly.
 
