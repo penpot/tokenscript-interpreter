@@ -26,57 +26,48 @@ variable args: List = {input};
 
 variable angle: Number = 180;
 variable first_stop: Number = 0;
-variable has_top: Boolean = false;
-variable has_right: Boolean = false;
-variable has_bottom: Boolean = false;
-variable has_left: Boolean = false;
+variable unit: String = type(args.get(0));
+variable factor: Number = 0;
+variable x: Number = 0;
+variable y: Number = 0;
 variable word: String = "";
 variable valid: Boolean = true;
 
-// The direction
-if (type(args.get(0)) == "deg") [
-  angle = args.get(0).to_number();
+// The direction: an angle, turned into degrees
+if (unit == "deg") [
+  factor = 1;
+] elif (unit == "turn") [
+  factor = 360;
+] elif (unit == "grad") [
+  factor = 0.9;
+] elif (unit == "rad") [
+  factor = 180 / pi();
+];
+
+if (factor > 0) [
+  angle = args.get(0).to_number() * factor;
   first_stop = 1;
-] elif (type(args.get(0)) == "turn") [
-  angle = args.get(0).to_number() * 360;
-  first_stop = 1;
-] elif (type(args.get(0)) == "grad") [
-  angle = args.get(0).to_number() * 0.9;
-  first_stop = 1;
-] elif (type(args.get(0)) == "rad") [
-  angle = args.get(0).to_number() * 180 / 3.141592653589793;
-  first_stop = 1;
-] elif (is_list(args.get(0))) [
+];
+
+// Or `to` and one or two sides: the sides make a vector (x to the right,
+// y to the top) and its angle is measured clockwise from the top
+if (is_list(args.get(0))) [
   if (type(args.get(0).get(0)) == "string") [
     if (args.get(0).get(0).lower() == "to") [
       first_stop = 1;
       for side in args.get(0) [
         if (type(side) == "string") [
           word = side.lower();
-          if (word == "top") [ has_top = true; ];
-          if (word == "right") [ has_right = true; ];
-          if (word == "bottom") [ has_bottom = true; ];
-          if (word == "left") [ has_left = true; ];
+          if (word == "top") [ y = 1; ];
+          if (word == "bottom") [ y = -1; ];
+          if (word == "right") [ x = 1; ];
+          if (word == "left") [ x = -1; ];
         ];
       ];
-      if (has_top && has_right) [
-        angle = 45;
-      ] elif (has_bottom && has_right) [
-        angle = 135;
-      ] elif (has_bottom && has_left) [
-        angle = 225;
-      ] elif (has_top && has_left) [
-        angle = 315;
-      ] elif (has_top) [
-        angle = 0;
-      ] elif (has_right) [
-        angle = 90;
-      ] elif (has_bottom) [
-        angle = 180;
-      ] elif (has_left) [
-        angle = 270;
-      ] else [
+      if (x == 0 && y == 0) [
         valid = false;
+      ] else [
+        angle = mod(round(atan2(x, y) * 180 / pi()), 360);
       ];
     ];
   ];
