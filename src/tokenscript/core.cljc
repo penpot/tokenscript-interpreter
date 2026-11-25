@@ -65,11 +65,12 @@
   number with a unit (`45deg`, `50%`, `16px`). Gives its number symbol.
   Gives nil for anything else, such as a reference or an expression
   (`{size}`, `{size} * 2`), which only has a value once it resolves."
-  [text]
-  (when-let [ast (and (string? text)
-                      (err/language-result #(:ast (parser/parse text {:mode :inline}))))]
-    (when (ast/number-node? ast)
-      (err/language-result #(interp/interpret ast)))))
+  ([text] (literal-number (default-config) text))
+  ([config text]
+   (when-let [ast (and (string? text)
+                       (err/language-result #(:ast (parser/parse text {:mode :inline}))))]
+     (when (ast/number-node? ast)
+       (err/language-result #(interp/interpret ast {:config config}))))))
 
 (defn convert-number
   "Converts `number`, a number with a unit, to the unit `unit`, such as

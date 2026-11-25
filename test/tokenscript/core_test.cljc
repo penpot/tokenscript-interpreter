@@ -43,7 +43,12 @@
       "red"
       "#ff0000"
       "rotate(45deg)"
-      "1px 2px")))
+      "1px 2px"))
+
+  (t/testing "with a config of its own, the same reading"
+    (t/is (= ["NumberWithUnit.Turn" "0.25turn"]
+             (printed (tsc/literal-number (tsc/default-config) "0.25turn"))))
+    (t/is (nil? (tsc/literal-number (tsc/default-config) "{size}")))))
 
 (t/deftest convert-number-test
   (t/testing "angles convert to degrees and back"
