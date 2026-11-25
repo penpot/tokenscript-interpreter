@@ -37,7 +37,10 @@ is. The importer rewrites what it does not:
   channel of the `rgba` or `hsla` of CSS: `rgb(255 0 0 / 50%)` is
   `rgba(255, 0, 0, 50%)`.
 - `transparent`, which tokenscript has no name for, becomes `#00000000`:
-  black with no alpha, as CSS defines it.
+  black with no alpha, as CSS defines it. CSS blends the colors of a
+  gradient with their alpha applied first, so a fade to `transparent`
+  keeps the color of the other stop. A renderer that blends the colors
+  as they are fades through dark, half transparent colors instead.
 - Every stop gets a position in percent: the ones CSS gives stops without
   one, clamped to 0%-100%. A color with two positions is two stops and a
   color hint is left out.
