@@ -215,7 +215,6 @@
   "All built in functions without unit conversion needs."
   (merge math-functions
          {"parse_int" parse-int-fn
-          "linear-gradient" (fn [args] (sym/string (str "linear-gradient(" (str/join ", " (map sym/to-string args)) ")")))
           "type" type-fn
           "is_null" (type-predicate "Null")
           "is_number" (type-predicate "Number")

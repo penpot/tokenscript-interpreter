@@ -1,0 +1,29 @@
+{
+  "name": "gradient",
+  "type": "token",
+  "description": "A linear or radial gradient: its kind, the angle of a linear one and its color stops. The angle and the stop colors are validated by their own token types.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "angle": {
+        "type": "token",
+        "url": "/api/v1/core/rotation/0/"
+      },
+      "stops": {
+        "type": "list",
+        "items": {
+          "type": "object",
+          "properties": {
+            "color": {
+              "type": "token",
+              "url": "/api/v1/core/color/0/"
+            }
+          }
+        }
+      }
+    }
+  },
+  "validation": {
+    "script": "./validation.tokenscript"
+  }
+}

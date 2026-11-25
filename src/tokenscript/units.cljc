@@ -30,6 +30,23 @@
 (def rem-unit-uri "/api/v1/core/rem-unit/0/")
 (def ch-unit-uri "/api/v1/core/ch-unit/0/")
 (def percent-unit-uri "/api/v1/core/percent-unit/0/")
+(def degree-unit-uri "/api/v1/core/deg-unit/0/")
+(def turn-unit-uri "/api/v1/core/turn-unit/0/")
+(def radian-unit-uri "/api/v1/core/rad-unit/0/")
+(def gradian-unit-uri "/api/v1/core/grad-unit/0/")
+
+(defn- angle-spec
+  "Makes the spec of an angle unit that converts to and from degrees. One
+  of the unit is equal to `degrees` degrees."
+  [name keyword description degrees]
+  {:name name :type "absolute" :keyword keyword
+   :description description
+   :conversions [{:source "$self" :target degree-unit-uri
+                  :script {:script (str "return ({input} * " degrees ")deg;")}
+                  :description (str "Convert " name "s to degrees.")}
+                 {:source degree-unit-uri :target "$self"
+                  :script {:script (str "return ({input} / " degrees ")" keyword ";")}
+                  :description (str "Convert degrees to " name "s.")}]})
 
 (def default-specs
   [[seconds-unit-uri
@@ -66,7 +83,17 @@
    [ch-unit-uri
     {:name "character" :type "absolute" :keyword "ch"
      :description "Relative to the width of the '0' character in the element's font."
-     :conversions []}]])
+     :conversions []}]
+   [degree-unit-uri
+    {:name "degree" :type "absolute" :keyword "deg"
+     :description "An angle in degrees, 360 to a full turn."
+     :conversions []}]
+   [turn-unit-uri
+    (angle-spec "turn" "turn" "An angle in turns, 1 to a full turn." 360)]
+   [radian-unit-uri
+    (angle-spec "radian" "rad" "An angle in radians, 2π to a full turn." (/ 180 #?(:clj Math/PI :cljs js/Math.PI)))]
+   [gradian-unit-uri
+    (angle-spec "gradian" "grad" "An angle in gradians, 400 to a full turn." 0.9)]])
 
 (def valid-unit-types ["absolute" "relative"])
 
@@ -102,7 +129,8 @@
   (->UnitRegistry {} {} {} {} (reg/new-cache)))
 
 (defn default-registry
-  "Registry with the built in units (`px`, `rem`, `%`, `s`, `ms`, `ch`)."
+  "Makes a registry with the built-in units: `px`, `rem`, `%`, `s`, `ms`,
+  `ch`, and the angles `deg`, `turn`, `rad` and `grad`."
   []
   (reduce (fn [registry [uri spec]] (reg/register registry uri spec)) (empty-registry) default-specs))
 

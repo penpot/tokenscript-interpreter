@@ -49,6 +49,19 @@
   (t/is (= :operations/cannot-mix-units (h/ev-error "1px + 1deg")))
   (t/is (= "NumberWithUnit.Px" (h/ev-type "3px"))))
 
+(t/deftest angle-units-test
+  (t/testing "turn, rad and grad are units, like deg"
+    (t/is (= "0.25turn" (h/ev "0.25turn")))
+    (t/is (= "NumberWithUnit.Turn" (h/ev-type "0.25turn")))
+    (t/is (= "NumberWithUnit.Rad" (h/ev-type "1rad")))
+    (t/is (= "NumberWithUnit.Grad" (h/ev-type "100grad"))))
+  (t/testing "they convert to degrees"
+    (t/is (= "180deg" (h/ev "0.25turn + 90deg")))
+    (t/is (= "180deg" (h/ev "90deg + 0.25turn")))
+    (t/is (= "270deg" (h/ev "0.5turn + 90deg"))))
+  (t/testing "an angle does not mix with a length"
+    (t/is (= :operations/cannot-mix-units (h/ev-error "1px + 1turn")))))
+
 (t/deftest comparisons-and-logic-test
   (t/is (= "true" (h/ev "1 < 2")))
   (t/is (= "false" (h/ev "1 == 2")))
@@ -76,7 +89,6 @@
   (t/is (= "color.hex" (h/ev "type(#333)")))
   (t/is (= "list.implicit" (h/ev "type({a})" {"a" (sym/list [(sym/number 1)] true)})))
   (t/is (= "true" (h/ev "is_number(1) && is_string(\"a\") && is_color(#fff) && is_null(null)")))
-  (t/is (= "linear-gradient(1, 2 5px, 3rem)" (h/ev "linear-gradient(1, 2 5px, 3rem)")))
   (t/is (= :interpreter/unknown-function (h/ev-error "unknown_function(1, 2, 3)")))
   (t/is (= :functions/expects-number-arguments (h/ev-error "abs(\"a\")")))
   (t/is (= :functions/requires-min-arguments (h/ev-error "min()")))

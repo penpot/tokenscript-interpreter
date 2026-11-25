@@ -5,24 +5,32 @@
 ;; Copyright (c) KALEIDOS SUBSIDIARY SL
 
 (ns tokenscript.document.dtcg
-  "What a DTCG token file means: which nodes are tokens, its type names,
-  JSON pointers, and the object values of the Format Module 2025.10, read
-  as tokenscript source and written back.
+  "Works out what a DTCG token file means: which nodes are tokens, its
+  type names, its JSON pointers and the object values of the Format
+  Module 2025.10. It reads them as tokenscript source and writes them
+  back.
 
-  Read, the object values become strings, so that tokenscript resolves
-  them and reports their errors (a missing token, a wrong type) as it
-  does for any token: `{value: 16, unit: \"px\"}` is `\"16px\"`, a color
-  object is the color in its color space, `oklch(0.628, 0.2577, 29.23)`,
-  and a JSON pointer is a reference. Strings, numbers and booleans are
-  kept. Composite values (typography, shadow) keep their structure;
-  their fields are read the same way. Shadows are normalized to a vector
-  of objects with the DTCG keys. Written, literal dimensions, colors and
-  numbers become DTCG objects again; expressions and references stay
-  strings.
+  On read, the object values become strings. Tokenscript then resolves
+  them and reports their errors, such as a missing token or a wrong
+  type, as for any token:
+
+  - `{value: 16, unit: \"px\"}` becomes `\"16px\"`.
+  - A color object becomes the color in its color space,
+    `oklch(0.628, 0.2577, 29.23)`.
+  - A JSON pointer becomes a reference.
+
+  Strings, numbers and booleans stay as they are. Composite values
+  (typography, shadow) keep their structure, and their fields are read
+  the same way. Shadows become a vector of objects with the DTCG keys.
+
+  On write, literal dimensions, colors and numbers become DTCG objects
+  again. Gradient angles and stop positions become numbers. Expressions
+  and references stay strings.
 
   See docs/dtcg.md."
   (:require
    [clojure.string :as str]
+   [tokenscript.ast :as ast]
    [tokenscript.colors :as colors]
    [tokenscript.core :as tsc]
    [tokenscript.errors :as err]
@@ -345,30 +353,28 @@
     (sequential? v) (mapv read-shadow-object v)
     :else v))
 
+(defn read-gradient
+  "Reads a gradient value as a map with its `kind`, its `angle` and its
+  `stops`. The DTCG drafts write a gradient as a list of stops. This
+  function reads such a list as a linear gradient. References stay as
+  they are."
+  [v]
+  (if (sequential? v)
+    {"kind" "linear" "stops" (vec v)}
+    v))
+
 (defn read-value
   "Reads the value `v` of a token of `type` (a type name of the bundled
   token types, see `read-type`). Returns `{:value v}`, with `:warnings`
   for colors read as their hex, or `{:error reason}`."
   [type v]
-  (read-tree (if (= "shadow" type) (read-shadow v) v) []))
+  (read-tree (case type
+               "shadow"   (read-shadow v)
+               "gradient" (read-gradient v)
+               v)
+             []))
 
 ;; Writing values -------------------------------------------------------------
-
-(defn- number-node?
-  [{:keys [node] :as ast}]
-  (case node
-    :num true
-    :element-with-unit (= :num (:node (:ast-node ast)))
-    :unary-op (and (= "-" (:value (:op-token ast))) (number-node? (:expr ast)))
-    false))
-
-(defn- literal-number
-  "The number of a literal number or dimension (`1.5`, `16px`, `-4px`).
-  Nil for references and other expressions, which stay strings."
-  [v]
-  (when-let [ast (and (string? v) (err/language-result #(:ast (parser/parse v {:mode :inline}))))]
-    (when (number-node? ast)
-      (err/language-result #(interp/interpret ast)))))
 
 (defn- json-number
   "Whole numbers as integers, so the file says `16`, not `16.0`."
@@ -382,7 +388,7 @@
 
 (defn- write-dimension
   [v]
-  (let [value (literal-number v)]
+  (let [value (tsc/literal-number v)]
     (cond
       (number? v) {"value" v "unit" "px"}
       (sym/number? value) {"value" (json-number (:value value)) "unit" "px"}
@@ -392,7 +398,7 @@
 
 (defn- write-number
   [v]
-  (let [value (literal-number v)]
+  (let [value (tsc/literal-number v)]
     (if (sym/number? value) (json-number (:value value)) v)))
 
 (def ^:private written-color-spaces
@@ -409,7 +415,7 @@
   [{:keys [node name args]}]
   (and (= :function-call node)
        (some? (colors/initializer (:colors (tsc/default-config)) name))
-       (every? number-node? args)))
+       (every? ast/number-node? args)))
 
 (defn- literal-color
   "The color of a hex color or a color call. Nil for references and
@@ -478,6 +484,54 @@
                          (read-shadow-object shadow))))
           v)))
 
+(defn gradient-offset
+  "Gives the offset of the literal stop position `v` of a gradient. A
+  number (`0.5`, `\"0.5\"`) stays as it is. A percentage (`\"50%\"`)
+  becomes a fraction. Gives nil for references, expressions and other
+  units. This function does not check the range. The `gradient` token
+  type checks it."
+  [v]
+  (if (number? v)
+    v
+    (let [value (tsc/literal-number v)]
+      (cond
+        (sym/number? value) (:value value)
+        ;; Rounded to 10 places, so that 66.67% is 0.6667 and not with
+        ;; the noise of a binary division
+        (and (sym/number-with-unit? value) (= "%" (:unit value)))
+        (/ (u/js-round (* (:value value) 1e8)) 1e10)))))
+
+(defn- write-angle
+  "Writes a literal angle in degrees, with or without `deg`, as a number.
+  Angles in other units, references and expressions stay strings."
+  [v]
+  (let [value (tsc/literal-number v)]
+    (cond
+      (sym/number? value) (json-number (:value value))
+      (and (sym/number-with-unit? value) (= "deg" (str/lower-case (:unit value))))
+      (json-number (:value value))
+      :else v)))
+
+(defn- write-stop-position
+  [v]
+  (if-let [offset (gradient-offset v)]
+    (json-number offset)
+    v))
+
+(defn- write-gradient
+  [v]
+  (if-not (map? v)
+    v
+    (cond-> v
+      (contains? v "angle") (update "angle" write-angle)
+      (sequential? (get v "stops"))
+      (update "stops" (fn [stops]
+                        (mapv (fn [stop]
+                                (cond-> stop
+                                  (and (map? stop) (contains? stop "color")) (update "color" write-color)
+                                  (and (map? stop) (contains? stop "position")) (update "position" write-stop-position)))
+                              stops))))))
+
 (defn write-value
   "Writes the value `v` of a token of `type` (a type name of the bundled
   token types) as DTCG 2025.10: literal dimensions, colors and numbers
@@ -489,4 +543,5 @@
     ("number" "fontWeight" "opacity") (write-number v)
     "typography" (write-typography v)
     "shadow" (write-shadow v)
+    "gradient" (write-gradient v)
     v))

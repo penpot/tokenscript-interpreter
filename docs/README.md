@@ -42,6 +42,8 @@ It is a port of the TypeScript reference implementation
 | `default-config` | The config with the bundled schemas, built once |
 | `build` | Resolves token data (`{name {:value .. :type ..}}`) or an ordered vector of token sets |
 | `color->hex` | Converts any color to a hex color, keeping alpha |
+| `literal-number` | Reads text that is a literal number (`50`, `.5`) or a number with a unit (`45deg`, `50%`) as its number symbol; nil for references and expressions |
+| `convert-number` | Converts a number with a unit to another unit with the conversions of the unit registry (`0.25turn` to `90deg`); nil without a conversion |
 
 Anything else is used from the implementation namespaces directly.
 
@@ -61,6 +63,8 @@ Anything else is used from the implementation namespaces directly.
 | `.validation` | Validation of resolved values against token type schemas. |
 | `.document.read`, `.document.write` | Reading and writing token files: DTCG, legacy and multi-set files. The format is decided per token. |
 | `.document.dtcg` | What DTCG means in a file: its tokens and legacy tokens, type names, JSON pointers, and its values (dimensions, colors, shadows) read as tokenscript source, so the resolver reads and checks them like any token, and written back. |
+| `.importers.syntax` | The CSS syntax the importers share: tokenizes a value and parses its calls with their arguments, without reading `/` or `-` as arithmetic. |
+| `.importers.css` | Imports CSS as tokenscript: a `linear-gradient()` as the value of a `gradient` token and as the tokenscript the bundled function reads. |
 | `.document.themes` | The sets and themes of multi-set files: `$themes` and `$metadata`. |
 | `.errors` | Error codes and error maps. |
 | `.util` | JavaScript compatible number formatting and string handling, and case insensitive name tables. |

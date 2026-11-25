@@ -44,6 +44,12 @@
   (t/testing "type names are case insensitive"
     (t/is (= {"x" ["INVALID_DIMENSION_TYPE"]} (codes {"x" ["1foo" "Dimension"]})))))
 
+(t/deftest rotation-test
+  (t/is (= {"plain" [] "deg" [] "turn" [] "rad" [] "grad" [] "word" ["INVALID_ROTATION_TYPE"]}
+           (codes {"plain" ["90" "rotation"] "deg" ["90deg" "rotation"]
+                   "turn" ["0.25turn" "rotation"] "rad" ["1rad" "rotation"]
+                   "grad" ["100grad" "rotation"] "word" ["quarter" "rotation"]}))))
+
 (t/deftest number-test
   (t/is (= {"ok" [] "unit" ["INVALID_NUMBER_UNIT"] "string" ["INVALID_NUMBER_TYPE"]}
            (codes {"ok" ["1.5" "number"] "unit" ["10px" "number"] "string" ["abc" "number"]}))))
@@ -95,6 +101,64 @@
                                    "bad-field" [(shadow "#000") "shadow"]
                                    "number" ["8" "shadow"]})
                           (fn [is] (mapv (fn [[code path]] [code (vec path)]) is)))))))
+
+(t/deftest gradient-test
+  (let [stops [{"color" "#f00" "position" "0"} {"color" "{blue}" "position" "100%"}]
+        gradient (fn [fields] [(merge {"kind" "linear" "stops" stops} fields) "gradient"])
+        with-stop (fn [stop] (gradient {"stops" (conj stops stop)}))
+        issues (fn [tokens]
+                 (-> (issues (assoc tokens "blue" ["#00f" "color"]))
+                     (dissoc "blue")
+                     (update-vals (fn [is] (mapv (fn [[code path]] [code (vec path)]) is)))))]
+    (t/is (= {"plain" [] "angled" [] "round" [] "alias" [] "function" []}
+             (issues {"plain" (gradient {})
+                      "angled" (gradient {"angle" "45 * 2"})
+                      "round" (gradient {"kind" "radial"})
+                      "alias" ["{plain}" "gradient"]
+                      "function" ["linear-gradient(90deg, {blue} 0%, #f00 100%)" "gradient"]})))
+    (t/testing "the value is a dictionary with a kind"
+      (t/is (= {"number" [["INVALID_GRADIENT_TYPE" []]]
+                "word" [["INVALID_GRADIENT_TYPE" []]]
+                "list" [["INVALID_GRADIENT_TYPE" []]]
+                "cone" [["INVALID_GRADIENT_KIND" []]]
+                "no-kind" [["INVALID_GRADIENT_KIND" []]]}
+               (issues {"number" ["8" "gradient"]
+                        "word" ["linear" "gradient"]
+                        "list" [stops "gradient"]
+                        "cone" (gradient {"kind" "conic"})
+                        "no-kind" [{"stops" stops} "gradient"]}))))
+    (t/testing "at least two stops, each with a color and a position"
+      (t/is (= {"one" [["INVALID_GRADIENT_STOPS" []]]
+                "no-stops" [["INVALID_GRADIENT_STOPS" []]]
+                "no-color" [["INVALID_GRADIENT_STOPS" []]]
+                "no-position" [["INVALID_GRADIENT_STOPS" []]]}
+               (issues {"one" (gradient {"stops" (subvec stops 0 1)})
+                        "no-stops" [{"kind" "linear"} "gradient"]
+                        "no-color" (with-stop {"position" "1"})
+                        "no-position" (with-stop {"color" "#fff"})}))))
+    (t/testing "positions go from 0 to 1, or from 0% to 100%"
+      (t/is (= {"half" [] "percent" []
+                "big" [["INVALID_GRADIENT_STOP_POSITION" []]]
+                "big-percent" [["INVALID_GRADIENT_STOP_POSITION" []]]
+                "px" [["INVALID_GRADIENT_STOP_POSITION" []]]
+                "not-a-number" [["INVALID_GRADIENT_STOP_POSITION" []]]}
+               (issues {"half" (with-stop {"color" "#fff" "position" "0.5"})
+                        "percent" (with-stop {"color" "#fff" "position" "50%"})
+                        "big" (with-stop {"color" "#fff" "position" "1.5"})
+                        "big-percent" (with-stop {"color" "#fff" "position" "150%"})
+                        "px" (with-stop {"color" "#fff" "position" "8px"})
+                        "not-a-number" (with-stop {"color" "#fff" "position" "#fff"})}))))
+    (t/testing "the angle is a rotation in any angle unit"
+      (t/is (= {"deg" [] "turn" [] "rad" [] "grad" []}
+               (issues {"deg" (gradient {"angle" "45deg"})
+                        "turn" (gradient {"angle" "0.25turn"})
+                        "rad" (gradient {"angle" "1rad"})
+                        "grad" (gradient {"angle" "100grad"})}))))
+    (t/testing "the angle and the stop colors fail with the codes of their types"
+      (t/is (= {"bad-angle" [["INVALID_ROTATION_TYPE" ["angle"]]]
+                "bad-color" [["INVALID_COLOR_TYPE" ["stops" 2 "color"]]]}
+               (issues {"bad-angle" (gradient {"angle" "#fff"})
+                        "bad-color" (with-stop {"color" "8" "position" "1"})}))))))
 
 (t/deftest untyped-test
   (t/is (= {"untyped" [] "unknown" []}

@@ -52,6 +52,7 @@ See [docs/](docs/README.md):
 - [Resolver](docs/resolver.md)
 - [Errors and issues](docs/errors.md)
 - [Token files](docs/dtcg.md)
+- [Importers](docs/importers.md)
 - [Testing](docs/testing.md)
 
 ## Development

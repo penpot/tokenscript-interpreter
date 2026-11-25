@@ -88,7 +88,7 @@ conversion, write the value as a script as shown in
 ## Units
 
 The lexer knows the units `px`, `em`, `rem`, `vw`, `vh`, `pt`, `in`,
-`cm`, `mm`, `deg`, `%`, `s`, `ms` and `ch`
+`cm`, `mm`, `deg`, `turn`, `rad`, `grad`, `%`, `s`, `ms` and `ch`
 (`lexer/supported-formats`). A unit is only a unit directly after a
 number, a closing parenthesis or a reference:
 
@@ -104,8 +104,9 @@ So a variable named `s` and the attribute `.s` of an HSL color do not
 clash with the unit `s`.
 
 Conversions between units come from the unit registry: `rem` and `px`
-(16px per rem), `s` and `ms`. The other units have none; see
-[Schemas](schemas.md#units).
+(16px per rem), `s` and `ms`, and the angles `turn`, `rad` and `grad`
+to and from `deg` (`0.25turn + 90deg` is `180deg`). The other units
+have none; see [Schemas](schemas.md#units).
 
 ## Operators
 
