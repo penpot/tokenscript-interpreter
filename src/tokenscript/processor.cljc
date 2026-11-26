@@ -1367,7 +1367,10 @@
      (if (= name new-name)
        (assoc (result (assoc st :changed #{})) :dependents (dependents-graph st name))
        (do
-         (when-let [e (first (name-collisions (concat (keys (:tokens st)) (keys (:collisions st))) {name new-name}))]
+         ;; checked against the names left once this definition moved:
+         ;; another set may still define `name`
+         (when-let [e (first (name-collisions (keys (merge-sets (update-in sets [i 1] dissoc name)))
+                                              [[nil new-name]]))]
            (err/raise (:code e) {:data (:data e)}))
          (let [rewrites (if (and update-references (= i (source-index sets name)))
                           (reference-rewrites sets #(defined? st %) {name new-name} update-references (state-value st))

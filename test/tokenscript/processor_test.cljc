@@ -355,7 +355,24 @@
              (error "color.primary.x"))
           "below a token")
     (t/is (= "{size.x}" (proc/input (proc/rename-token st "size" "size.x" {:update-references :visible}) "b"))
-          "below its own old name")))
+          "below its own old name"))
+  (t/testing "below its old name while another set still defines it"
+    (let [st (:state (build-sets [[:core {"a" "1"}] [:theme {"a" "2" "b" "{a}"}]]))
+          error (fn [opts]
+                  (try (proc/rename-token st "a" "a.x" opts)
+                       nil
+                       (catch #?(:clj Exception :cljs :default) e (select-keys (ex-data e) [:code :data]))))
+          collision {:code :processor/token-name-collision :data {:token-name "a.x" :parent "a"}}]
+      (t/is (= collision (error {:update-references :visible})) "the visible definition")
+      (t/is (= collision (error {:set :core})) "a shadowed definition"))))
+
+(t/deftest rename-token-in-sets-test
+  (let [st (:state (build-sets [[:core {"a" "1" "b" "{a}"}] [:dark {"c" "{a} + 1"}]]))
+        rn (proc/rename-token st "a" "alpha" {:update-references [:dark]})
+        data (fn [set-key name] (get-in (into {} (get-in rn [:state :sets])) [set-key name]))]
+    (t/is (= "{alpha} + 1" (data :dark "c")) "the references of the given sets follow")
+    (t/is (= "{a}" (data :core "b")) "the others are kept")
+    (t/is (= #{"b"} (proc/broken-references rn)))))
 
 (t/deftest group-renames-test
   (let [names ["primary" "primary.primary-dark" "primary.light.x" "primary-dark" "color.primary"]]
@@ -384,7 +401,14 @@
     (t/is (= [] (codes {"x.a" "x.b" "x.b" "x.c"})) "names freed by the same renames")
     (t/is (= [[:processor/token-already-exists {:token-name "gap"}]] (codes {"size" "gap" "space" "gap"})))
     (t/is (= [[:processor/token-already-exists {:token-name "size"}]] (codes {nil "size"}))
-          "a token added under a name")))
+          "a token added under a name")
+    (t/is (= [[:processor/token-name-collision {:token-name "color.primary.x" :parent "color.primary"}]
+              [:processor/token-name-collision {:token-name "color.primary.y" :parent "color.primary"}]
+              [:processor/token-already-exists {:token-name "x.a"}]]
+             (codes [[nil "color.primary.x"] [nil "color.primary.y"] [nil "x.a"]]))
+          "tokens added as pairs, as when copying a group")
+    (t/is (= [[:processor/token-already-exists {:token-name "w.a"}]] (codes [[nil "w.a"] [nil "w.a"]]))
+          "two copies under one name")))
 
 (t/deftest reference-updates-test
   (let [sets [[:core {"a" "1" "b" "{a} * 10"}]
@@ -419,7 +443,18 @@
       (t/is (= {[nil "b"] "({alpha} + 5)"}
                (proc/reference-updates records {"a" "alpha"} {:token-reader reader})))
       (t/is (= {[nil "b"] "{alpha} + 5"}
-               (proc/reference-updates records {"a" "alpha"} {:token-value :val}))))))
+               (proc/reference-updates records {"a" "alpha"} {:token-value :val})))))
+  (t/testing "the caller's own structured values"
+    (let [records {"a" {:val "1"}
+                   "fonts" {:val ["Arial" "{a}"]}
+                   "text" {:val {:font-size "{a}" :font-family ["{a}" "Inter"] :line-height "1.5"}}
+                   "shadows" {:val [{:blur "{a}" :color "#000"} {:blur "2" :color "#fff"}]}}]
+      (t/is (= {[nil "fonts"] ["Arial" "{alpha}"]
+                [nil "text"] {:font-size "{alpha}" :font-family ["{alpha}" "Inter"] :line-height "1.5"}
+                [nil "shadows"] [{:blur "{alpha}" :color "#000"} {:blur "2" :color "#fff"}]}
+               (proc/reference-updates records {"a" "alpha"} {:token-value :val})))
+      (t/is (= #{[nil "fonts"] [nil "text"] [nil "shadows"]}
+               (proc/referencing-tokens records ["a"] {:token-value :val}))))))
 
 (t/deftest referencing-tokens-test
   (let [sets [[:core {"a" "1" "b" "{a} * 10" "typo" {:size "{a}"}}]
@@ -713,7 +748,7 @@
         set-key (gen/elements [nil :core :dark])]
     (gen/one-of [(gen/tuple (gen/elements [:update :create]) token-name (gen/elements prop-values) set-key)
                  (gen/tuple (gen/elements [:delete]) token-name set-key)
-                 (gen/tuple (gen/elements [:rename]) token-name token-name (gen/elements [nil :visible :all]))
+                 (gen/tuple (gen/elements [:rename]) token-name token-name (gen/elements [nil :visible :all [:core] [:core :dark]]))
                  (gen/tuple (gen/elements [:sets]) gen-sets)
                  ;; an edit of the current sets, keeping the other set maps
                  ;; and token data as the same objects, or no edit
