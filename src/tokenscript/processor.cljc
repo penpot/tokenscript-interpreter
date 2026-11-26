@@ -1311,19 +1311,21 @@
                     (str/starts-with? name prefix) [name (str new-group (subs name (count group)))])))
           names)))
 
+(defn- clean-renames
+  [renames]
+  (into [] (comp (map (fn [[n n']] [(some-> n str/trim) (str/trim n')]))
+                 (remove (fn [[n n']] (= n n'))))
+        renames))
+
 (defn- name-collisions
-  "The errors of the renames `renames` among the token names `names`, see
-  `rename-collisions`."
-  [names renames]
-  (let [renames (into [] (comp (map (fn [[n n']] [(some-> n str/trim) (str/trim n')]))
-                               (remove (fn [[n n']] (= n n'))))
-                      renames)
-        kept (reduce disj (set names) (map first renames))
-        after (into kept (map second) renames)
-        times (frequencies (map second renames))]
+  "The errors of the renames `renames`, `[[name new-name] ..]`: a new name
+  in `taken` or given twice, or a new name below or above another of
+  `after`, the names defined once the renames are made."
+  [taken after renames]
+  (let [times (frequencies (map second renames))]
     (into []
           (comp (mapcat (fn [[_ new-name]]
-                          [(when (or (contains? kept new-name) (< 1 (get times new-name)))
+                          [(when (or (contains? taken new-name) (< 1 (get times new-name)))
                              (err/error-map :processor/token-already-exists {:data {:token-name new-name}}))
                            (when-let [parent (parent-name after new-name)]
                              (err/error-map :processor/token-name-collision {:data {:token-name new-name :parent parent}}))
@@ -1333,30 +1335,60 @@
                 (distinct))
           renames)))
 
+(defn- set-rename-collisions
+  "`name-collisions` of `renames` made in the set at `i`: a new name is
+  taken when that set keeps it, and collides with the names of every set,
+  so an old name another set still defines keeps counting."
+  [sets i renames]
+  (let [sets (update-in sets [i 1] #(apply dissoc % (map first renames)))]
+    (name-collisions (set (keys (get-in sets [i 1])))
+                     (into (set (keys (merge-sets sets))) (map second) renames)
+                     renames)))
+
+(defn- collision-sets
+  "The sets whose names count for collisions: all of them for `:all`, else
+  those of the set keys of `scope` and of `also`."
+  [sets scope also]
+  (cond
+    (= :all scope) sets
+
+    (coll? scope)
+    (let [in? (into (set also) scope)]
+      (doseq [k scope] (set-index sets k))
+      (filterv (fn [[k]] (contains? in? k)) sets))
+
+    :else (err/raise :processor/invalid-scope {:data {:scope scope}})))
+
 (defn rename-collisions
-  "Why the renames `renames`, `{name new-name}`, can not be made in
-  `tokens`, token data or sets of it as `build` takes them:
-  `:processor/token-already-exists` for a new name another token keeps,
-  `:processor/token-name-collision` for a new name below a token or above
-  other tokens. Empty when they can. `renames` may also be `[name
-  new-name]` pairs: a name the tokens do not define, nil for one, checks
-  a token added under its new name, as when copying tokens."
-  [tokens renames]
-  (name-collisions (keys (merge-sets (normalize-sets tokens))) renames))
+  "Why the renames `renames` can not be made in `tokens`, token data or
+  sets of it as `build` takes them: a new name another token keeps
+  (`:processor/token-already-exists`), or one below a token or above other
+  tokens (`:processor/token-name-collision`). Empty when they can. With
+  `:set`, the renames are made in that set: a name is taken only when that
+  set keeps it, while collisions count the other sets too. Without it the
+  sets count as one. `:scope`, `:all` (default) or set keys, limits the
+  sets that count. `renames` is a map or `[name new-name]` pairs; a nil
+  name adds a token, as when copying tokens."
+  ([tokens renames] (rename-collisions tokens renames nil))
+  ([tokens renames opts]
+   (let [set? (contains? opts :set)
+         sets (collision-sets (normalize-sets tokens) (:scope opts :all) (when set? [(:set opts)]))
+         renames (clean-renames renames)]
+     (if set?
+       (set-rename-collisions sets (set-index sets (:set opts)) renames)
+       (let [kept (reduce disj (set (keys (merge-sets sets))) (map first renames))]
+         (name-collisions kept (into kept (map second) renames) renames))))))
 
 (defn rename-token
   "Renames the token `name` to `new-name` in the `:set` of `opts`, by
   default the set it is taken from. When that definition is the visible
   one, a definition of `name` it shadowed becomes visible. The references
   to `name` break unless `:update-references` rewrites them: `:visible` in
-  the visible definitions of the tokens, `:all` in every definition of
-  every set, also in structured values and references to fields. When the
-  renamed definition is shadowed, the references are to the visible one
-  and kept. The token data is rewritten in its shape for the default
-  reader; with a `:token-reader` of its own a rewrite raises
-  `:processor/token-not-updatable`, see `reference-updates`. A name below
-  a token, or above other tokens, raises `:processor/token-name-collision`.
-  Returns the build result with `:dependents`."
+  the visible definitions, `:all` in every definition of every set, or a
+  collection of set keys in every definition of those sets (see Renaming
+  in docs/resolver.md). It refuses what `rename-collisions` reports for
+  its set, so also a name below `name` while another set still defines
+  it. Returns the build result with `:dependents`."
   ([st name new-name] (rename-token st name new-name nil))
   ([st name new-name {:keys [update-references] :as opts}]
    (let [name (str/trim name)
@@ -1369,10 +1401,7 @@
      (if (= name new-name)
        (assoc (result (assoc st :changed #{})) :dependents (dependents-graph st name))
        (do
-         ;; checked against the names left once this definition moved:
-         ;; another set may still define `name`
-         (when-let [e (first (name-collisions (keys (merge-sets (update-in sets [i 1] dissoc name)))
-                                              [[nil new-name]]))]
+         (when-let [e (first (set-rename-collisions sets i [[name new-name]]))]
            (err/raise (:code e) {:data (:data e)}))
          (let [rewrites (if (and update-references (= i (source-index sets name)))
                           (reference-rewrites sets #(defined? st %) {name new-name} update-references (state-value st))

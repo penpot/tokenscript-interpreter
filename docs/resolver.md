@@ -285,14 +285,40 @@ renames themselves:
 (processor/group-renames ["primary.light" "primary.primary-dark" "primary-dark"] "primary" "main")
 ;; => {"primary.light" "main.light", "primary.primary-dark" "main.primary-dark"}
 
-;; what keeps renames from being made: a taken name, a name below a
-;; token or above other tokens; empty when they can be
-(processor/rename-collisions sets {"token-foo" "accent"})
+;; what keeps renames from being made in set :b: a name :b keeps, a
+;; name below a token or above other tokens; empty when they can be
+(processor/rename-collisions sets {"token-foo" "accent"} {:set :b})
 ;; => [{:code :processor/token-already-exists :data {:token-name "accent"} ..}]
+
+;; the old name keeps counting where another set still defines it
+(processor/rename-collisions sets {"token-foo" "token-foo.x"} {:set :b})
+;; => [{:code :processor/token-name-collision
+;;      :data {:token-name "token-foo.x" :parent "token-foo"} ..}]
+
+;; tokens added, as when copying a group: pairs with a nil old name
+(processor/rename-collisions sets [[nil "accent"] [nil "accent.dark"]] {:set :b})
+;; => [{:code :processor/token-already-exists :data {:token-name "accent"} ..}
+;;     {:code :processor/token-name-collision
+;;      :data {:token-name "accent.dark" :parent "accent"} ..}]
 ```
 
-`rename-token` refuses a rename `rename-collisions` reports, with its
-first error.
+With `:set`, a new name is taken only when that set keeps it: a name of
+another set is allowed, and the renamed token shadows it or is shadowed
+by it. Collisions count the names of every set, or with `:scope` (set
+keys) only of those sets and the one renamed in, so a caller can check
+against the active sets or the set alone:
+
+```clojure
+(processor/rename-collisions sets {"token-foo" "token-foo.x"} {:set :b :scope [:b]})
+;; => []
+```
+
+Without `:set`, the sets count as one, and every name is taken. A plain
+token map is one set without a key, so its definitions come back as
+`[nil token-name]` from `reference-updates` and `referencing-tokens`.
+
+`rename-token` refuses what `rename-collisions` reports for the set it
+renames in, with the first error.
 
 ## Previews
 

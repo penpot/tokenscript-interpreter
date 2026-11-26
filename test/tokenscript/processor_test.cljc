@@ -366,6 +366,13 @@
       (t/is (= collision (error {:update-references :visible})) "the visible definition")
       (t/is (= collision (error {:set :core})) "a shadowed definition"))))
 
+(t/deftest rename-token-onto-another-set-test
+  (let [st (:state (build-sets [[:core {"a" "1"}] [:theme {"b" "2"}]]))
+        rn (proc/rename-token st "a" "b")]
+    (t/is (= "2" (value rn "b")) "the later set's definition stays visible")
+    (t/is (= :theme (proc/source rn "b")))
+    (t/is (not (contains? (:tokens rn) "a")))))
+
 (t/deftest rename-token-in-sets-test
   (let [st (:state (build-sets [[:core {"a" "1" "b" "{a}"}] [:dark {"c" "{a} + 1"}]]))
         rn (proc/rename-token st "a" "alpha" {:update-references [:dark]})
@@ -408,7 +415,45 @@
              (codes [[nil "color.primary.x"] [nil "color.primary.y"] [nil "x.a"]]))
           "tokens added as pairs, as when copying a group")
     (t/is (= [[:processor/token-already-exists {:token-name "w.a"}]] (codes [[nil "w.a"] [nil "w.a"]]))
-          "two copies under one name")))
+          "two copies under one name"))
+  (t/testing "in a set"
+    (let [sets [[:core {"size" "4" "color.primary" "#f00" "x.a" "1"}]
+                [:dark {"space" "8"}]]
+          codes (fn [renames set-key]
+                  (mapv (juxt :code :data) (proc/rename-collisions sets renames {:set set-key})))]
+      (t/is (= [] (codes {"size" "space"} :core)) "a name of another set")
+      (t/is (= [[:processor/token-already-exists {:token-name "x.a"}]] (codes {"size" "x.a"} :core))
+            "a name the set keeps")
+      (t/is (= [[:processor/token-name-collision {:token-name "color.primary" :parent "color"}]]
+               (codes {"space" "color"} :dark))
+            "above a token of another set")
+      (t/is (= [[:processor/token-name-collision {:token-name "size.x" :parent "size"}]]
+               (codes {"space" "size.x"} :dark))
+            "below a token of another set")
+      (t/is (= :processor/token-set-not-found
+               (h/error-code #(proc/rename-collisions sets {"size" "gap"} {:set :nope}))))
+      (t/testing "with the sets that count"
+        (let [codes (fn [scope]
+                      (mapv (juxt :code :data) (proc/rename-collisions sets {"space" "color"} {:set :dark :scope scope})))]
+          (t/is (= [] (codes [:dark])) "only the set renamed in")
+          (t/is (= [] (codes [])) "the set renamed in always counts")
+          (t/is (= [[:processor/token-name-collision {:token-name "color.primary" :parent "color"}]] (codes [:core])))
+          (t/is (= :processor/invalid-scope (h/error-code #(codes :active))))))))
+  (t/testing "the old name while another set still defines it"
+    (let [sets [[:core {"a" "1"}] [:theme {"a" "2"}]]]
+      (t/is (= [[:processor/token-name-collision {:token-name "a.x" :parent "a"}]]
+               (mapv (juxt :code :data) (proc/rename-collisions sets {"a" "a.x"} {:set :theme}))))))
+  (t/testing "the examples of docs/resolver.md"
+    (let [sets [[:a {"token-foo" {:value "red"} "accent" {:value "{token-foo}"}}]
+                [:b {"token-foo" {:value "blue"} "accent" {:value "{token-foo}"}}]]
+          codes (fn [renames] (mapv (juxt :code :data) (proc/rename-collisions sets renames {:set :b})))]
+      (t/is (= [[:processor/token-already-exists {:token-name "accent"}]] (codes {"token-foo" "accent"})))
+      (t/is (= [[:processor/token-name-collision {:token-name "token-foo.x" :parent "token-foo"}]]
+               (codes {"token-foo" "token-foo.x"})))
+      (t/is (= [] (proc/rename-collisions sets {"token-foo" "token-foo.x"} {:set :b :scope [:b]})))
+      (t/is (= [[:processor/token-already-exists {:token-name "accent"}]
+                [:processor/token-name-collision {:token-name "accent.dark" :parent "accent"}]]
+               (codes [[nil "accent"] [nil "accent.dark"]]))))))
 
 (t/deftest reference-updates-test
   (let [sets [[:core {"a" "1" "b" "{a} * 10"}]
