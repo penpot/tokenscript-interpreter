@@ -276,7 +276,7 @@
         (t/is (= :processor/token-not-updatable (:code e)))
         (t/is (= {:token-name "b"} (:data e))))
       (t/testing "get the rewritten values to write themselves"
-        (t/is (= {[nil "b"] "{alpha} + 5"} (proc/reference-updates st "a" "alpha"))))
+        (t/is (= {[nil "b"] "{alpha} + 5"} (proc/reference-updates records {"a" "alpha"} {:token-reader reader}))))
       (t/testing "are moved as they are without reference updates"
         (let [rn (proc/rename-token st "a" "alpha")]
           (t/is (identical? (get records "a") (proc/input rn "alpha")))
@@ -309,14 +309,13 @@
         (t/is (= "{alpha} * 10" (data rn :core "b")))
         (t/is (= "{alpha} + 1" (data rn :theme "b")))
         (t/is (= {[:core "b"] "{alpha} * 10" [:theme "b"] "{alpha} + 1" [:theme "c"] "{alpha} + 100"}
-                 (proc/reference-updates (:state res) "a" "alpha" {:update-references :all})))))
+                 (proc/reference-updates [[:core core] [:theme theme]] {"a" "alpha"} {:scope :all})))))
     (t/testing "renaming a shadowed definition keeps the references to the visible one"
       (let [rn (proc/rename-token (:state res) "a" "alpha" {:set :core :update-references :all})]
         (t/is (= "{a} * 10" (data rn :core "b")))
         (t/is (= "1" (value rn "alpha")))
         (t/is (= "3" (value rn "b")))
-        (t/is (= "102" (value rn "c")))
-        (t/is (= {} (proc/reference-updates (:state res) "a" "alpha" {:set :core :update-references :all})))))))
+        (t/is (= "102" (value rn "c")))))))
 
 (t/deftest rename-token-references-test
   (t/testing "in structured values"
@@ -342,6 +341,50 @@
     (let [res (process {"a" "{a}"})
           rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
       (t/is (= "{alpha}" (proc/input rn "alpha"))))))
+
+(t/deftest reference-updates-test
+  (let [sets [[:core {"a" "1" "b" "{a} * 10"}]
+              [:light {"a" "2" "c" "{a} + 1"}]
+              [:dark {"d" "{a} + {b}"}]]]
+    (t/testing "in the definitions of the given sets"
+      (t/is (= {[:core "b"] "{alpha} * 10" [:dark "d"] "{alpha} + {b}"}
+               (proc/reference-updates sets {"a" "alpha"} {:scope #{:core :dark}}))))
+    (t/testing "a set that is not given"
+      (t/is (= :processor/token-set-not-found
+               (h/error-code #(proc/reference-updates sets {"a" "alpha"} {:scope [:nope]})))))
+    (t/testing "several renames at once"
+      (t/is (= {[:dark "d"] "{b} + {c}"}
+               (proc/reference-updates sets {"a" "b" "b" "c"} {:scope [:dark]}))
+            "a reference to `a` is not renamed on to `c`")))
+  (t/testing "a rename the tokens already have"
+    (t/is (= {[nil "c"] "{alpha} + 1"}
+             (proc/reference-updates {"alpha" "1" "c" "{a} + 1"} {"a" "alpha"}))))
+  (t/testing "a token below the renamed name keeps its references"
+    (t/is (= {[nil "b"] "{alpha} + {a.x} + {alpha.y}"}
+             (proc/reference-updates {"a" {:x "1" :y "2"} "a.x" "3" "b" "{a} + {a.x} + {a.y}"} {"a" "alpha"}))))
+  (t/testing "a string with a token name is not a reference"
+    (t/is (= {[nil "b"] "'{a}' + {alpha}"}
+             (proc/reference-updates {"a" "1" "b" "'{a}' + {a}"} {"a" "alpha"}))))
+  (t/testing "a value that does not parse"
+    (t/is (= {[nil "b"] "{alpha} +"}
+             (proc/reference-updates {"a" "1" "b" "{a} +"} {"a" "alpha"}))))
+  (t/testing "the caller's own value of its records"
+    ;; the reader changes the value, so its value can not be written back
+    (let [reader (fn [{:keys [val]}] {:value (str "(" val ")")})
+          records {"a" {:val "10"} "b" {:val "{a} + 5"}}]
+      (t/is (= {[nil "b"] "({alpha} + 5)"}
+               (proc/reference-updates records {"a" "alpha"} {:token-reader reader})))
+      (t/is (= {[nil "b"] "{alpha} + 5"}
+               (proc/reference-updates records {"a" "alpha"} {:token-value :val}))))))
+
+(t/deftest referencing-tokens-test
+  (let [sets [[:core {"a" "1" "b" "{a} * 10" "typo" {:size "{a}"}}]
+              [:dark {"c" "{typo.size} + {b}" "d" "'{a}'" "e" "{b}"}]]]
+    (t/is (= #{[:core "b"] [:core "typo"]} (proc/referencing-tokens sets ["a"] {:scope :all})))
+    (t/is (= #{[:dark "c"]} (proc/referencing-tokens sets ["typo"] {:scope :all}))
+          "a reference to a field")
+    (t/is (= #{[:dark "c"] [:dark "e"]} (proc/referencing-tokens sets ["a" "b"] {:scope [:dark]})))
+    (t/is (= #{} (proc/referencing-tokens sets ["x"] {:scope :all})))))
 
 (t/deftest assoc-value-test
   (t/is (= "{b}" (td/assoc-value "{a}" "{b}")))

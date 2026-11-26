@@ -232,23 +232,48 @@ break when there is none, unless `:update-references` rewrites them:
 |---|---|
 | `:visible` | The visible definition of every token. |
 | `:all` | Every definition of every set, also the shadowed ones. |
+| a collection of set keys | Every definition of those sets. |
 
 References to a field or key of the token (`{typo.fontSize}`) are
 rewritten too, as are the string leaves of structured values, but not
 references to a token of its own below the name (`{a.x}` when renaming
-`a`). Renaming a shadowed definition rewrites nothing: the references
-are to the visible one.
+`a`), nor a name in a string (`'{a}'`). A value that does not parse is
+read tolerantly, so `{a} +` becomes `{alpha} +`. Renaming a shadowed
+definition rewrites nothing: the references are to the visible one.
 
 The token data is rewritten in its shape: a plain value stays plain and
 DTCG data keeps its `$value` key. Records read by a `:token-reader` of
 the caller cannot be rewritten by the resolver, and a rewrite raises
-`:processor/token-not-updatable`. `(processor/reference-updates state
-name new-name opts)` takes the same options and returns the rewritten
-values, as the reader returns them, by set key and token name:
+`:processor/token-not-updatable`.
+
+`(processor/reference-updates tokens renames opts)` returns the
+rewritten values by set key and token name, for token data or sets as
+`build` takes them, without resolving them. The renames (`{"old"
+"new"}`) apply at once: renaming `a` to `b` and `b` to `c` sends the
+references to `a` to `b`, not on to `c`. It takes `:scope`, one of the
+values of `:update-references` (default `:visible`), `:token-reader` and
+`:token-value`, the value of the caller's token data to rewrite; by
+default it rewrites the value the reader returns. The names do not have
+to be tokens of the sets, so a caller can rename in its records first:
 
 ```clojure
-(processor/reference-updates state "token-foo" "token-bar" {:update-references :all})
+(def sets [[:a {"token-foo" {:value "red"} "accent" {:value "{token-foo}"}}]
+           [:b {"token-foo" {:value "blue"} "accent" {:value "{token-foo}"}}]])
+
+(processor/reference-updates sets {"token-foo" "token-bar"} {:scope :all})
 ;; => {[:a "accent"] "{token-bar}", [:b "accent"] "{token-bar}"}
+
+(processor/reference-updates sets {"token-foo" "token-bar"} {:scope [:b]})
+;; => {[:b "accent"] "{token-bar}"}
+```
+
+`(processor/referencing-tokens tokens names opts)` takes the same
+options and tells which definitions a rename of `names` rewrites, to ask
+before renaming:
+
+```clojure
+(processor/referencing-tokens sets ["token-foo"] {:scope :all})
+;; => #{[:a "accent"] [:b "accent"]}
 ```
 
 A caller keeping its own records writes them and the new name into its
