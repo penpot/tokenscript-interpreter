@@ -1293,6 +1293,55 @@
                      [k n])))
            (scope-definitions sets (or (:scope opts) :visible))))))
 
+(defn group-renames
+  "The renames, `{name new-name}`, that move the tokens of `names` in the
+  group `group`, a dot path (`\"color.primary\"`), to `new-group`. A token
+  named like the group moves too; a name that only starts like it
+  (`color.primary-dark`) stays."
+  [names group new-group]
+  (let [group (str/trim group)
+        new-group (str/trim new-group)
+        prefix (str group ".")]
+    (into {}
+          (keep (fn [name]
+                  (cond
+                    (= name group) [name new-group]
+                    (str/starts-with? name prefix) [name (str new-group (subs name (count group)))])))
+          names)))
+
+(defn- name-collisions
+  "The errors of the renames `renames` among the token names `names`, see
+  `rename-collisions`."
+  [names renames]
+  (let [renames (into [] (comp (map (fn [[n n']] [(some-> n str/trim) (str/trim n')]))
+                               (remove (fn [[n n']] (= n n'))))
+                      renames)
+        kept (reduce disj (set names) (map first renames))
+        after (into kept (map second) renames)
+        times (frequencies (map second renames))]
+    (into []
+          (comp (mapcat (fn [[_ new-name]]
+                          [(when (or (contains? kept new-name) (< 1 (get times new-name)))
+                             (err/error-map :processor/token-already-exists {:data {:token-name new-name}}))
+                           (when-let [parent (parent-name after new-name)]
+                             (err/error-map :processor/token-name-collision {:data {:token-name new-name :parent parent}}))
+                           (when-let [below (some #(when (str/starts-with? % (str new-name ".")) %) after)]
+                             (err/error-map :processor/token-name-collision {:data {:token-name below :parent new-name}}))]))
+                (remove nil?)
+                (distinct))
+          renames)))
+
+(defn rename-collisions
+  "Why the renames `renames`, `{name new-name}`, can not be made in
+  `tokens`, token data or sets of it as `build` takes them:
+  `:processor/token-already-exists` for a new name another token keeps,
+  `:processor/token-name-collision` for a new name below a token or above
+  other tokens. Empty when they can. `renames` may also be `[name
+  new-name]` pairs: a name the tokens do not define, nil for one, checks
+  a token added under its new name, as when copying tokens."
+  [tokens renames]
+  (name-collisions (keys (merge-sets (normalize-sets tokens))) renames))
+
 (defn rename-token
   "Renames the token `name` to `new-name` in the `:set` of `opts`, by
   default the set it is taken from. When that definition is the visible
@@ -1303,8 +1352,9 @@
   renamed definition is shadowed, the references are to the visible one
   and kept. The token data is rewritten in its shape for the default
   reader; with a `:token-reader` of its own a rewrite raises
-  `:processor/token-not-updatable`, see `reference-updates`. Returns the
-  build result with `:dependents`."
+  `:processor/token-not-updatable`, see `reference-updates`. A name below
+  a token, or above other tokens, raises `:processor/token-name-collision`.
+  Returns the build result with `:dependents`."
   ([st name new-name] (rename-token st name new-name nil))
   ([st name new-name {:keys [update-references] :as opts}]
    (let [name (str/trim name)
@@ -1317,8 +1367,8 @@
      (if (= name new-name)
        (assoc (result (assoc st :changed #{})) :dependents (dependents-graph st name))
        (do
-         (when (defined? st new-name)
-           (err/raise :processor/token-already-exists {:data {:token-name new-name}}))
+         (when-let [e (first (name-collisions (concat (keys (:tokens st)) (keys (:collisions st))) {name new-name}))]
+           (err/raise (:code e) {:data (:data e)}))
          (let [rewrites (if (and update-references (= i (source-index sets name)))
                           (reference-rewrites sets #(defined? st %) {name new-name} update-references (state-value st))
                           {})

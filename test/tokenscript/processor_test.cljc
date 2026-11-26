@@ -342,6 +342,50 @@
           rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
       (t/is (= "{alpha}" (proc/input rn "alpha"))))))
 
+(t/deftest rename-token-collision-test
+  (let [st (:state (process {"size" "4" "color.primary" "#f00" "b" "{size}"}))
+        error (fn [new-name]
+                (try (proc/rename-token st "size" new-name {:update-references :visible})
+                     nil
+                     (catch #?(:clj Exception :cljs :default) e (select-keys (ex-data e) [:code :data]))))]
+    (t/is (= {:code :processor/token-name-collision :data {:token-name "color.primary" :parent "color"}}
+             (error "color"))
+          "onto a group")
+    (t/is (= {:code :processor/token-name-collision :data {:token-name "color.primary.x" :parent "color.primary"}}
+             (error "color.primary.x"))
+          "below a token")
+    (t/is (= "{size.x}" (proc/input (proc/rename-token st "size" "size.x" {:update-references :visible}) "b"))
+          "below its own old name")))
+
+(t/deftest group-renames-test
+  (let [names ["primary" "primary.primary-dark" "primary.light.x" "primary-dark" "color.primary"]]
+    (t/is (= {"primary" "main" "primary.primary-dark" "main.primary-dark" "primary.light.x" "main.light.x"}
+             (proc/group-renames names "primary" "main"))
+          "by path segment, not by the text of the group name")
+    (t/is (= {"primary.light.x" "primary.dim.x"}
+             (proc/group-renames names "primary.light" "primary.dim"))
+          "a nested group")))
+
+(t/deftest rename-collisions-test
+  (let [sets [[:core {"size" "4" "color.primary" "#f00" "x.a" "1" "x.b" "2" "y.a" "3"}]
+              [:dark {"space" "8"}]]
+        codes (fn [renames] (mapv (juxt :code :data) (proc/rename-collisions sets renames)))]
+    (t/is (= [] (codes {"size" "gap"})))
+    (t/is (= [[:processor/token-already-exists {:token-name "space"}]] (codes {"size" "space"}))
+          "a name of another set")
+    (t/is (= [[:processor/token-name-collision {:token-name "color.primary" :parent "color"}]] (codes {"size" "color"}))
+          "onto a group")
+    (t/is (= [[:processor/token-name-collision {:token-name "color.primary.x" :parent "color.primary"}]]
+             (codes {"size" "color.primary.x"}))
+          "below a token")
+    (t/is (= [[:processor/token-already-exists {:token-name "y.a"}]]
+             (codes (proc/group-renames (keys (second (first sets))) "x" "y")))
+          "a group onto a group where one name is taken")
+    (t/is (= [] (codes {"x.a" "x.b" "x.b" "x.c"})) "names freed by the same renames")
+    (t/is (= [[:processor/token-already-exists {:token-name "gap"}]] (codes {"size" "gap" "space" "gap"})))
+    (t/is (= [[:processor/token-already-exists {:token-name "size"}]] (codes {nil "size"}))
+          "a token added under a name")))
+
 (t/deftest reference-updates-test
   (let [sets [[:core {"a" "1" "b" "{a} * 10"}]
               [:light {"a" "2" "c" "{a} + 1"}]
@@ -692,7 +736,8 @@
                                   ::delete (update-in sets [i 1] dissoc b)
                                   (update-in sets [i 1] assoc b c)))))
     (catch #?(:clj Exception :cljs :default) e
-      (when-not (contains? #{:processor/token-not-found :processor/token-already-exists :processor/token-set-not-found}
+      (when-not (contains? #{:processor/token-not-found :processor/token-already-exists :processor/token-set-not-found
+                             :processor/token-name-collision}
                            (:code (ex-data e)))
         (throw e)))))
 

@@ -277,7 +277,22 @@ before renaming:
 ```
 
 A caller keeping its own records writes them and the new name into its
-records, and passes its sets to `set-sets`.
+records, and passes its sets to `set-sets`. Two helpers work out the
+renames themselves:
+
+```clojure
+;; a group, by path segment: `primary-dark` only starts like `primary`
+(processor/group-renames ["primary.light" "primary.primary-dark" "primary-dark"] "primary" "main")
+;; => {"primary.light" "main.light", "primary.primary-dark" "main.primary-dark"}
+
+;; what keeps renames from being made: a taken name, a name below a
+;; token or above other tokens; empty when they can be
+(processor/rename-collisions sets {"token-foo" "accent"})
+;; => [{:code :processor/token-already-exists :data {:token-name "accent"} ..}]
+```
+
+`rename-token` refuses a rename `rename-collisions` reports, with its
+first error.
 
 ## Previews
 
