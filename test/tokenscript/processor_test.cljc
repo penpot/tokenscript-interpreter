@@ -424,6 +424,11 @@
       (t/is (= {[:dark "d"] "{b} + {c}"}
                (proc/reference-updates sets {"a" "b" "b" "c"} {:scope [:dark]}))
             "a reference to `a` is not renamed on to `c`")))
+  (t/testing "a scope that is no collection of set keys"
+    (t/is (= :processor/invalid-scope
+             (h/error-code #(proc/reference-updates {"a" "1" "b" "{a}"} {"a" "alpha"} {:scope :active}))))
+    (t/is (= :processor/invalid-scope
+             (h/error-code #(proc/referencing-tokens {"a" "1" "b" "{a}"} ["a"] {:scope :active})))))
   (t/testing "a rename the tokens already have"
     (t/is (= {[nil "c"] "{alpha} + 1"}
              (proc/reference-updates {"alpha" "1" "c" "{a} + 1"} {"a" "alpha"}))))

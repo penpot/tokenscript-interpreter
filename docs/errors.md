@@ -86,6 +86,11 @@ token name above it (`{:token-name "a.b" :parent "a"}`). `rename-token`
 raises it instead of renaming a token below another one or above a
 group of tokens.
 
+`:processor/invalid-scope` is raised for a `:scope` or
+`:update-references` that is neither `:visible`, `:all` nor a
+collection of set keys: `:scope` holds the value given
+(`{:scope :active}`).
+
 `:processor/circular-dependency` names the token in `:tokens`. An
 error in a field of a structured token is stored on the token with the
 field as `:path`.

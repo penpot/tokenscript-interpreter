@@ -1203,9 +1203,11 @@
   (let [in-scope? (case scope
                     :visible (fn [j _ n] (= j (source-index sets n)))
                     :all (constantly true)
-                    (let [in? (set scope)]
-                      (doseq [k in?] (set-index sets k))
-                      (fn [_ k _] (contains? in? k))))]
+                    (if (coll? scope)
+                      (let [in? (set scope)]
+                        (doseq [k in?] (set-index sets k))
+                        (fn [_ k _] (contains? in? k)))
+                      (err/raise :processor/invalid-scope {:data {:scope scope}})))]
     (for [[j [k tokens]] (map-indexed vector sets)
           [n data] tokens
           :when (in-scope? j k n)]
