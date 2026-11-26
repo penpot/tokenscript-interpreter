@@ -82,7 +82,14 @@ cause, so callers can match the root cause's code:
 
 `:processor/token-name-collision` is the error of a token named below
 another token: `:token-name` is the token and `:parent` the longest
-token name above it (`{:token-name "a.b" :parent "a"}`).
+token name above it (`{:token-name "a.b" :parent "a"}`). `rename-token`
+raises it instead of renaming a token below another one or above a
+group of tokens.
+
+`:processor/invalid-scope` is raised for a `:scope` or
+`:update-references` that is neither `:visible`, `:all` nor a
+collection of set keys: `:scope` holds the value given
+(`{:scope :active}`).
 
 `:processor/circular-dependency` names the token in `:tokens`. An
 error in a field of a structured token is stored on the token with the
@@ -91,3 +98,7 @@ field as `:path`.
 A [token reader](resolver.md#token-reader) can fail a token with an
 error map of its own code; the tokens referencing it get
 `:processor/dependency-error` with that error as the `:cause`.
+
+`rename-token` raises `:processor/token-not-updatable` when it would
+[rewrite the references](resolver.md#renaming) in token data read by a
+`:token-reader` of the caller; `:token-name` names that token.

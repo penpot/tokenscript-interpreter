@@ -162,7 +162,7 @@ edit on the shared state and drop the result.
 |---|---|
 | `(create-token state name data opts)` | Adds a token, to the last set by default. Raises `:processor/token-already-exists` when that set has it. |
 | `(update-token state name data opts)` | Sets the data of a token, adding it when it does not exist. |
-| `(rename-token state name new-name opts)` | Renames a token. References to it break unless `:update-references? true` rewrites them. |
+| `(rename-token state name new-name opts)` | Renames a token. References to it break unless `:update-references` rewrites them, see [Renaming](#renaming). |
 | `(delete-token state name opts)` | Removes a token. Raises `:processor/token-not-found` when the set does not have it. |
 | `(set-sets state sets)` | Replaces the sets, for a theme switch, a toggled set or an edit. |
 
@@ -209,6 +209,116 @@ kept.
 `tokens-with-issues`, `token-error`, `errors` and `issue-with-code?`
 read a result. `input` returns the token data a name is taken from, as
 the caller gave it.
+
+## Renaming
+
+`rename-token` renames the definition in the `:set` of `opts`, by
+default the set the token is taken from. A definition of the old name in
+an earlier set, shadowed until then, becomes visible:
+
+```clojure
+(def state
+  (:state (ts/build [[:a {"token-foo" {:value "red"} "accent" {:value "{token-foo}"}}]
+                     [:b {"token-foo" {:value "blue"} "accent" {:value "{token-foo}"}}]])))
+
+(processor/tokens->strings (processor/rename-token state "token-foo" "token-bar"))
+;; => {"token-foo" "#FF0000", "token-bar" "#0000FF", "accent" "#FF0000"}
+```
+
+The references to the old name then resolve to that definition, or
+break when there is none, unless `:update-references` rewrites them:
+
+| `:update-references` | Rewrites the references in |
+|---|---|
+| `:visible` | The visible definition of every token. |
+| `:all` | Every definition of every set, also the shadowed ones. |
+| a collection of set keys | Every definition of those sets. |
+
+References to a field or key of the token (`{typo.fontSize}`) are
+rewritten too, as are the string leaves of structured values, but not
+references to a token of its own below the name (`{a.x}` when renaming
+`a`), nor a name in a string (`'{a}'`). A value that does not parse is
+read tolerantly, so `{a} +` becomes `{alpha} +`. Renaming a shadowed
+definition rewrites nothing: the references are to the visible one.
+
+The token data is rewritten in its shape: a plain value stays plain and
+DTCG data keeps its `$value` key. Records read by a `:token-reader` of
+the caller cannot be rewritten by the resolver, and a rewrite raises
+`:processor/token-not-updatable`.
+
+`(processor/reference-updates tokens renames opts)` returns the
+rewritten values by set key and token name, for token data or sets as
+`build` takes them, without resolving them. The renames (`{"old"
+"new"}`) apply at once: renaming `a` to `b` and `b` to `c` sends the
+references to `a` to `b`, not on to `c`. It takes `:scope`, one of the
+values of `:update-references` (default `:visible`), `:token-reader` and
+`:token-value`, the value of the caller's token data to rewrite; by
+default it rewrites the value the reader returns. The names do not have
+to be tokens of the sets, so a caller can rename in its records first:
+
+```clojure
+(def sets [[:a {"token-foo" {:value "red"} "accent" {:value "{token-foo}"}}]
+           [:b {"token-foo" {:value "blue"} "accent" {:value "{token-foo}"}}]])
+
+(processor/reference-updates sets {"token-foo" "token-bar"} {:scope :all})
+;; => {[:a "accent"] "{token-bar}", [:b "accent"] "{token-bar}"}
+
+(processor/reference-updates sets {"token-foo" "token-bar"} {:scope [:b]})
+;; => {[:b "accent"] "{token-bar}"}
+```
+
+`(processor/referencing-tokens tokens names opts)` takes the same
+options and tells which definitions a rename of `names` rewrites, to ask
+before renaming:
+
+```clojure
+(processor/referencing-tokens sets ["token-foo"] {:scope :all})
+;; => #{[:a "accent"] [:b "accent"]}
+```
+
+A caller keeping its own records writes them and the new name into its
+records, and passes its sets to `set-sets`. Two helpers work out the
+renames themselves:
+
+```clojure
+;; a group, by path segment: `primary-dark` only starts like `primary`
+(processor/group-renames ["primary.light" "primary.primary-dark" "primary-dark"] "primary" "main")
+;; => {"primary.light" "main.light", "primary.primary-dark" "main.primary-dark"}
+
+;; what keeps renames from being made in set :b: a name :b keeps, a
+;; name below a token or above other tokens; empty when they can be
+(processor/rename-collisions sets {"token-foo" "accent"} {:set :b})
+;; => [{:code :processor/token-already-exists :data {:token-name "accent"} ..}]
+
+;; the old name keeps counting where another set still defines it
+(processor/rename-collisions sets {"token-foo" "token-foo.x"} {:set :b})
+;; => [{:code :processor/token-name-collision
+;;      :data {:token-name "token-foo.x" :parent "token-foo"} ..}]
+
+;; tokens added, as when copying a group: pairs with a nil old name
+(processor/rename-collisions sets [[nil "accent"] [nil "accent.dark"]] {:set :b})
+;; => [{:code :processor/token-already-exists :data {:token-name "accent"} ..}
+;;     {:code :processor/token-name-collision
+;;      :data {:token-name "accent.dark" :parent "accent"} ..}]
+```
+
+With `:set`, a new name is taken only when that set keeps it: a name of
+another set is allowed, and the renamed token shadows it or is shadowed
+by it. Collisions count the names of every set, or with `:scope` (set
+keys) only of those sets and the one renamed in, so a caller can check
+against the active sets or the set alone:
+
+```clojure
+(processor/rename-collisions sets {"token-foo" "token-foo.x"} {:set :b :scope [:b]})
+;; => []
+```
+
+Without `:set`, the sets count as one, and every name is taken. A plain
+token map is one set without a key, so its definitions come back as
+`[nil token-name]` from `reference-updates` and `referencing-tokens`.
+
+`rename-token` refuses what `rename-collisions` reports for the set it
+renames in, with the first error.
 
 ## Previews
 

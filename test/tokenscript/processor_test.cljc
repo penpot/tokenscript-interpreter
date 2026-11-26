@@ -229,7 +229,7 @@
 
 (t/deftest rename-token-test
   (let [res (process {"a" "10" "b" "{a} + 5"})
-        rn (proc/rename-token (:state res) "a" "alpha" {:update-references? true})]
+        rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
     (t/is (= "{alpha} + 5" (get-in rn [:state :tokens "b"])) "the data is rewritten in the shape it was given")
     (t/is (= "{alpha} + 5" (get-in rn [:state :data "b" :value])))
     (t/is (= "15" (value rn "b")))
@@ -241,7 +241,287 @@
       (t/is (= #{"b"} (proc/broken-references rn)))))
   (let [st (:state (process {"a" "1" "b" "2"}))]
     (t/is (= :processor/token-already-exists (h/error-code #(proc/rename-token st "a" "b"))))
-    (t/is (= :processor/token-not-found (h/error-code #(proc/rename-token st "x" "y"))))))
+    (t/is (= :processor/token-not-found (h/error-code #(proc/rename-token st "x" "y")))))
+  (t/testing "a token whose data is nil"
+    (let [rn (proc/rename-token (:state (process {"a" nil "b" "1"})) "a" "alpha")]
+      (t/is (contains? (get-in rn [:state :tokens]) "alpha"))
+      (t/is (sym/null? (get-in rn [:tokens "alpha"]))))))
+
+
+(defn- build-sets
+  [sets]
+  (proc/build sets {:config (h/core-config)}))
+
+(t/deftest rename-token-data-test
+  (t/testing "DTCG data keeps its keys"
+    (let [res (process {"a" {"$value" "10"} "b" {"$value" "{a} + 5" "$type" "number"}})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= {"$value" "{alpha} + 5" "$type" "number"} (proc/input rn "b")))
+      (t/is (= {"$value" "10"} (proc/input rn "alpha")))
+      (t/is (= "15" (value rn "b")))))
+  (t/testing "normalized data keeps its other fields"
+    (let [res (process {"a" {:value "10"} "b" {:value "{a} + 5" :type "number" :metadata 7}})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= {:value "{alpha} + 5" :type "number" :metadata 7} (proc/input rn "b")))))
+  (t/testing "a caller's records"
+    (let [reader (fn [{:keys [val]}] {:value val})
+          records {"a" {:name "a" :val "10" :id 1}
+                   "b" {:name "b" :val "{a} + 5" :id 2}
+                   "c" {:name "c" :val "{b} * 2" :id 3}}
+          st (:state (proc/build records {:config (h/core-config) :token-reader reader}))
+          e (try (proc/rename-token st "a" "alpha" {:update-references :visible})
+                 nil
+                 (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+      (t/testing "can not be rewritten"
+        (t/is (= :processor/token-not-updatable (:code e)))
+        (t/is (= {:token-name "b"} (:data e))))
+      (t/testing "get the rewritten values to write themselves"
+        (t/is (= {[nil "b"] "{alpha} + 5"} (proc/reference-updates records {"a" "alpha"} {:token-reader reader}))))
+      (t/testing "are moved as they are without reference updates"
+        (let [rn (proc/rename-token st "a" "alpha")]
+          (t/is (identical? (get records "a") (proc/input rn "alpha")))
+          (t/is (= #{"b" "c"} (proc/broken-references rn))))))))
+
+;; A rename in the set a token is taken from lets a definition it shadowed
+;; through, and rewrites the references to the visible token only.
+(t/deftest rename-token-sets-test
+  (t/testing "a shadowed definition becomes visible"
+    (let [res (build-sets [[:a {"token-foo" "#ff0000"}] [:b {"token-foo" "#0000ff"}]])
+          rn (proc/rename-token (:state res) "token-foo" "token-bar")]
+      (t/is (= "#ff0000" (value rn "token-foo")))
+      (t/is (= "#0000ff" (value rn "token-bar")))
+      (t/is (= :a (proc/source rn "token-foo")))
+      (t/is (= :b (proc/source rn "token-bar")))))
+  (let [core {"a" "1" "b" "{a} * 10"}
+        theme {"a" "2" "b" "{a} + 1" "c" "{a} + 100"}
+        res (build-sets [[:core core] [:theme theme]])
+        data (fn [res set-key name] (get-in (into {} (get-in res [:state :sets])) [set-key name]))]
+    (t/testing ":visible rewrites the visible definitions"
+      (let [rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+        (t/is (= "{alpha} + 1" (data rn :theme "b")))
+        (t/is (= "{alpha} + 100" (data rn :theme "c")))
+        (t/is (= "{a} * 10" (data rn :core "b")) "a shadowed definition is kept")
+        (t/is (= "1" (value rn "a")))
+        (t/is (= "3" (value rn "b")))
+        (t/is (= "102" (value rn "c")))))
+    (t/testing ":all rewrites every definition"
+      (let [rn (proc/rename-token (:state res) "a" "alpha" {:update-references :all})]
+        (t/is (= "{alpha} * 10" (data rn :core "b")))
+        (t/is (= "{alpha} + 1" (data rn :theme "b")))
+        (t/is (= {[:core "b"] "{alpha} * 10" [:theme "b"] "{alpha} + 1" [:theme "c"] "{alpha} + 100"}
+                 (proc/reference-updates [[:core core] [:theme theme]] {"a" "alpha"} {:scope :all})))))
+    (t/testing "renaming a shadowed definition keeps the references to the visible one"
+      (let [rn (proc/rename-token (:state res) "a" "alpha" {:set :core :update-references :all})]
+        (t/is (= "{a} * 10" (data rn :core "b")))
+        (t/is (= "1" (value rn "alpha")))
+        (t/is (= "3" (value rn "b")))
+        (t/is (= "102" (value rn "c")))))))
+
+(t/deftest rename-token-references-test
+  (t/testing "in structured values"
+    (let [res (process {"a" "2" "typo" {:fontSize "{a} * 8" :lineHeight "{a}" :weight "400"}})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= {:fontSize "{alpha} * 8" :lineHeight "{alpha}" :weight "400"} (proc/input rn "typo")))
+      (t/is (nil? (:issues rn)))))
+  (t/testing "in vectors of structured values"
+    (let [res (process {"a" "2" "shadow" [{:blur "{a}"} {:blur "3"}]})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= [{:blur "{alpha}"} {:blur "3"}] (proc/input rn "shadow")))))
+  (t/testing "to a field of the renamed token"
+    (let [res (process {"typo" {:fontSize "16"} "size" "{typo.fontSize} * 2"})
+          rn (proc/rename-token (:state res) "typo" "heading" {:update-references :visible})]
+      (t/is (= "{heading.fontSize} * 2" (proc/input rn "size")))
+      (t/is (= "32" (value rn "size")))))
+  (t/testing "but not to a token below its name"
+    (let [res (process {"a" "1" "a.x" "2" "b" "{a} + {a.x}"})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= "{alpha} + {a.x}" (proc/input rn "b")))
+      (t/is (= "3" (value rn "b")))))
+  (t/testing "in the renamed token itself"
+    (let [res (process {"a" "{a}"})
+          rn (proc/rename-token (:state res) "a" "alpha" {:update-references :visible})]
+      (t/is (= "{alpha}" (proc/input rn "alpha"))))))
+
+(t/deftest rename-token-collision-test
+  (let [st (:state (process {"size" "4" "color.primary" "#f00" "b" "{size}"}))
+        error (fn [new-name]
+                (try (proc/rename-token st "size" new-name {:update-references :visible})
+                     nil
+                     (catch #?(:clj Exception :cljs :default) e (select-keys (ex-data e) [:code :data]))))]
+    (t/is (= {:code :processor/token-name-collision :data {:token-name "color.primary" :parent "color"}}
+             (error "color"))
+          "onto a group")
+    (t/is (= {:code :processor/token-name-collision :data {:token-name "color.primary.x" :parent "color.primary"}}
+             (error "color.primary.x"))
+          "below a token")
+    (t/is (= "{size.x}" (proc/input (proc/rename-token st "size" "size.x" {:update-references :visible}) "b"))
+          "below its own old name"))
+  (t/testing "below its old name while another set still defines it"
+    (let [st (:state (build-sets [[:core {"a" "1"}] [:theme {"a" "2" "b" "{a}"}]]))
+          error (fn [opts]
+                  (try (proc/rename-token st "a" "a.x" opts)
+                       nil
+                       (catch #?(:clj Exception :cljs :default) e (select-keys (ex-data e) [:code :data]))))
+          collision {:code :processor/token-name-collision :data {:token-name "a.x" :parent "a"}}]
+      (t/is (= collision (error {:update-references :visible})) "the visible definition")
+      (t/is (= collision (error {:set :core})) "a shadowed definition"))))
+
+(t/deftest rename-token-onto-another-set-test
+  (let [st (:state (build-sets [[:core {"a" "1"}] [:theme {"b" "2"}]]))
+        rn (proc/rename-token st "a" "b")]
+    (t/is (= "2" (value rn "b")) "the later set's definition stays visible")
+    (t/is (= :theme (proc/source rn "b")))
+    (t/is (not (contains? (:tokens rn) "a")))))
+
+(t/deftest rename-token-in-sets-test
+  (let [st (:state (build-sets [[:core {"a" "1" "b" "{a}"}] [:dark {"c" "{a} + 1"}]]))
+        rn (proc/rename-token st "a" "alpha" {:update-references [:dark]})
+        data (fn [set-key name] (get-in (into {} (get-in rn [:state :sets])) [set-key name]))]
+    (t/is (= "{alpha} + 1" (data :dark "c")) "the references of the given sets follow")
+    (t/is (= "{a}" (data :core "b")) "the others are kept")
+    (t/is (= #{"b"} (proc/broken-references rn)))))
+
+(t/deftest group-renames-test
+  (let [names ["primary" "primary.primary-dark" "primary.light.x" "primary-dark" "color.primary"]]
+    (t/is (= {"primary" "main" "primary.primary-dark" "main.primary-dark" "primary.light.x" "main.light.x"}
+             (proc/group-renames names "primary" "main"))
+          "by path segment, not by the text of the group name")
+    (t/is (= {"primary.light.x" "primary.dim.x"}
+             (proc/group-renames names "primary.light" "primary.dim"))
+          "a nested group")))
+
+(t/deftest rename-collisions-test
+  (let [sets [[:core {"size" "4" "color.primary" "#f00" "x.a" "1" "x.b" "2" "y.a" "3"}]
+              [:dark {"space" "8"}]]
+        codes (fn [renames] (mapv (juxt :code :data) (proc/rename-collisions sets renames)))]
+    (t/is (= [] (codes {"size" "gap"})))
+    (t/is (= [[:processor/token-already-exists {:token-name "space"}]] (codes {"size" "space"}))
+          "a name of another set")
+    (t/is (= [[:processor/token-name-collision {:token-name "color.primary" :parent "color"}]] (codes {"size" "color"}))
+          "onto a group")
+    (t/is (= [[:processor/token-name-collision {:token-name "color.primary.x" :parent "color.primary"}]]
+             (codes {"size" "color.primary.x"}))
+          "below a token")
+    (t/is (= [[:processor/token-already-exists {:token-name "y.a"}]]
+             (codes (proc/group-renames (keys (second (first sets))) "x" "y")))
+          "a group onto a group where one name is taken")
+    (t/is (= [] (codes {"x.a" "x.b" "x.b" "x.c"})) "names freed by the same renames")
+    (t/is (= [[:processor/token-already-exists {:token-name "gap"}]] (codes {"size" "gap" "space" "gap"})))
+    (t/is (= [[:processor/token-already-exists {:token-name "size"}]] (codes {nil "size"}))
+          "a token added under a name")
+    (t/is (= [[:processor/token-name-collision {:token-name "color.primary.x" :parent "color.primary"}]
+              [:processor/token-name-collision {:token-name "color.primary.y" :parent "color.primary"}]
+              [:processor/token-already-exists {:token-name "x.a"}]]
+             (codes [[nil "color.primary.x"] [nil "color.primary.y"] [nil "x.a"]]))
+          "tokens added as pairs, as when copying a group")
+    (t/is (= [[:processor/token-already-exists {:token-name "w.a"}]] (codes [[nil "w.a"] [nil "w.a"]]))
+          "two copies under one name"))
+  (t/testing "in a set"
+    (let [sets [[:core {"size" "4" "color.primary" "#f00" "x.a" "1"}]
+                [:dark {"space" "8"}]]
+          codes (fn [renames set-key]
+                  (mapv (juxt :code :data) (proc/rename-collisions sets renames {:set set-key})))]
+      (t/is (= [] (codes {"size" "space"} :core)) "a name of another set")
+      (t/is (= [[:processor/token-already-exists {:token-name "x.a"}]] (codes {"size" "x.a"} :core))
+            "a name the set keeps")
+      (t/is (= [[:processor/token-name-collision {:token-name "color.primary" :parent "color"}]]
+               (codes {"space" "color"} :dark))
+            "above a token of another set")
+      (t/is (= [[:processor/token-name-collision {:token-name "size.x" :parent "size"}]]
+               (codes {"space" "size.x"} :dark))
+            "below a token of another set")
+      (t/is (= :processor/token-set-not-found
+               (h/error-code #(proc/rename-collisions sets {"size" "gap"} {:set :nope}))))
+      (t/testing "with the sets that count"
+        (let [codes (fn [scope]
+                      (mapv (juxt :code :data) (proc/rename-collisions sets {"space" "color"} {:set :dark :scope scope})))]
+          (t/is (= [] (codes [:dark])) "only the set renamed in")
+          (t/is (= [] (codes [])) "the set renamed in always counts")
+          (t/is (= [[:processor/token-name-collision {:token-name "color.primary" :parent "color"}]] (codes [:core])))
+          (t/is (= :processor/invalid-scope (h/error-code #(codes :active))))))))
+  (t/testing "the old name while another set still defines it"
+    (let [sets [[:core {"a" "1"}] [:theme {"a" "2"}]]]
+      (t/is (= [[:processor/token-name-collision {:token-name "a.x" :parent "a"}]]
+               (mapv (juxt :code :data) (proc/rename-collisions sets {"a" "a.x"} {:set :theme}))))))
+  (t/testing "the examples of docs/resolver.md"
+    (let [sets [[:a {"token-foo" {:value "red"} "accent" {:value "{token-foo}"}}]
+                [:b {"token-foo" {:value "blue"} "accent" {:value "{token-foo}"}}]]
+          codes (fn [renames] (mapv (juxt :code :data) (proc/rename-collisions sets renames {:set :b})))]
+      (t/is (= [[:processor/token-already-exists {:token-name "accent"}]] (codes {"token-foo" "accent"})))
+      (t/is (= [[:processor/token-name-collision {:token-name "token-foo.x" :parent "token-foo"}]]
+               (codes {"token-foo" "token-foo.x"})))
+      (t/is (= [] (proc/rename-collisions sets {"token-foo" "token-foo.x"} {:set :b :scope [:b]})))
+      (t/is (= [[:processor/token-already-exists {:token-name "accent"}]
+                [:processor/token-name-collision {:token-name "accent.dark" :parent "accent"}]]
+               (codes [[nil "accent"] [nil "accent.dark"]]))))))
+
+(t/deftest reference-updates-test
+  (let [sets [[:core {"a" "1" "b" "{a} * 10"}]
+              [:light {"a" "2" "c" "{a} + 1"}]
+              [:dark {"d" "{a} + {b}"}]]]
+    (t/testing "in the definitions of the given sets"
+      (t/is (= {[:core "b"] "{alpha} * 10" [:dark "d"] "{alpha} + {b}"}
+               (proc/reference-updates sets {"a" "alpha"} {:scope #{:core :dark}}))))
+    (t/testing "a set that is not given"
+      (t/is (= :processor/token-set-not-found
+               (h/error-code #(proc/reference-updates sets {"a" "alpha"} {:scope [:nope]})))))
+    (t/testing "several renames at once"
+      (t/is (= {[:dark "d"] "{b} + {c}"}
+               (proc/reference-updates sets {"a" "b" "b" "c"} {:scope [:dark]}))
+            "a reference to `a` is not renamed on to `c`")))
+  (t/testing "a scope that is no collection of set keys"
+    (t/is (= :processor/invalid-scope
+             (h/error-code #(proc/reference-updates {"a" "1" "b" "{a}"} {"a" "alpha"} {:scope :active}))))
+    (t/is (= :processor/invalid-scope
+             (h/error-code #(proc/referencing-tokens {"a" "1" "b" "{a}"} ["a"] {:scope :active})))))
+  (t/testing "a rename the tokens already have"
+    (t/is (= {[nil "c"] "{alpha} + 1"}
+             (proc/reference-updates {"alpha" "1" "c" "{a} + 1"} {"a" "alpha"}))))
+  (t/testing "a token below the renamed name keeps its references"
+    (t/is (= {[nil "b"] "{alpha} + {a.x} + {alpha.y}"}
+             (proc/reference-updates {"a" {:x "1" :y "2"} "a.x" "3" "b" "{a} + {a.x} + {a.y}"} {"a" "alpha"}))))
+  (t/testing "a string with a token name is not a reference"
+    (t/is (= {[nil "b"] "'{a}' + {alpha}"}
+             (proc/reference-updates {"a" "1" "b" "'{a}' + {a}"} {"a" "alpha"}))))
+  (t/testing "a value that does not parse"
+    (t/is (= {[nil "b"] "{alpha} +"}
+             (proc/reference-updates {"a" "1" "b" "{a} +"} {"a" "alpha"}))))
+  (t/testing "the caller's own value of its records"
+    ;; the reader changes the value, so its value can not be written back
+    (let [reader (fn [{:keys [val]}] {:value (str "(" val ")")})
+          records {"a" {:val "10"} "b" {:val "{a} + 5"}}]
+      (t/is (= {[nil "b"] "({alpha} + 5)"}
+               (proc/reference-updates records {"a" "alpha"} {:token-reader reader})))
+      (t/is (= {[nil "b"] "{alpha} + 5"}
+               (proc/reference-updates records {"a" "alpha"} {:token-value :val})))))
+  (t/testing "the caller's own structured values"
+    (let [records {"a" {:val "1"}
+                   "fonts" {:val ["Arial" "{a}"]}
+                   "text" {:val {:font-size "{a}" :font-family ["{a}" "Inter"] :line-height "1.5"}}
+                   "shadows" {:val [{:blur "{a}" :color "#000"} {:blur "2" :color "#fff"}]}}]
+      (t/is (= {[nil "fonts"] ["Arial" "{alpha}"]
+                [nil "text"] {:font-size "{alpha}" :font-family ["{alpha}" "Inter"] :line-height "1.5"}
+                [nil "shadows"] [{:blur "{alpha}" :color "#000"} {:blur "2" :color "#fff"}]}
+               (proc/reference-updates records {"a" "alpha"} {:token-value :val})))
+      (t/is (= #{[nil "fonts"] [nil "text"] [nil "shadows"]}
+               (proc/referencing-tokens records ["a"] {:token-value :val}))))))
+
+(t/deftest referencing-tokens-test
+  (let [sets [[:core {"a" "1" "b" "{a} * 10" "typo" {:size "{a}"}}]
+              [:dark {"c" "{typo.size} + {b}" "d" "'{a}'" "e" "{b}"}]]]
+    (t/is (= #{[:core "b"] [:core "typo"]} (proc/referencing-tokens sets ["a"] {:scope :all})))
+    (t/is (= #{[:dark "c"]} (proc/referencing-tokens sets ["typo"] {:scope :all}))
+          "a reference to a field")
+    (t/is (= #{[:dark "c"] [:dark "e"]} (proc/referencing-tokens sets ["a" "b"] {:scope [:dark]})))
+    (t/is (= #{} (proc/referencing-tokens sets ["x"] {:scope :all})))))
+
+(t/deftest assoc-value-test
+  (t/is (= "{b}" (td/assoc-value "{a}" "{b}")))
+  (t/is (= {"$value" "{b}" "$type" "number"} (td/assoc-value {"$value" "{a}" "$type" "number"} "{b}")))
+  (t/is (= {:$value "{b}"} (td/assoc-value {:$value "{a}"} "{b}")))
+  (t/is (= {:value "{b}" "$value" "{a}"} (td/assoc-value {:value "{a}" "$value" "{a}"} "{b}"))
+        "the value is written where it is read")
+  (t/is (= {:p "{b}"} (td/assoc-value {:p "{a}"} {:p "{b}"})) "a structured value is replaced"))
 
 (t/deftest create-and-delete-token-test
   (let [res (process {"a" "10" "b" "{a} + 5"})
@@ -268,9 +548,6 @@
   (= (snapshot (proc/build (get-in res [:state :sets]) {:config (get-in res [:state :config])}))
      (snapshot res)))
 
-(defn- build-sets
-  [sets]
-  (proc/build sets {:config (h/core-config)}))
 
 (t/deftest sets-test
   (let [res (build-sets [[:core {"color.bg" {:value "#fff" :metadata {:id 1}}
@@ -487,7 +764,7 @@
                           :update (proc/update-token st name {:value arg})
                           :create (proc/create-token st name {:value arg})
                           :delete (proc/delete-token st name)
-                          :rename (proc/rename-token st name arg {:update-references? true}))]
+                          :rename (proc/rename-token st name arg {:update-references :visible}))]
                 (t/is (same-as-build? res) (str "after " op " " name))
                 (:state res)))
             start
@@ -521,7 +798,7 @@
         set-key (gen/elements [nil :core :dark])]
     (gen/one-of [(gen/tuple (gen/elements [:update :create]) token-name (gen/elements prop-values) set-key)
                  (gen/tuple (gen/elements [:delete]) token-name set-key)
-                 (gen/tuple (gen/elements [:rename]) token-name token-name gen/boolean)
+                 (gen/tuple (gen/elements [:rename]) token-name token-name (gen/elements [nil :visible :all [:core] [:core :dark]]))
                  (gen/tuple (gen/elements [:sets]) gen-sets)
                  ;; an edit of the current sets, keeping the other set maps
                  ;; and token data as the same objects, or no edit
@@ -535,7 +812,7 @@
       :update (proc/update-token st a {:value b} (when c {:set c}))
       :create (proc/create-token st a {:value b} (when c {:set c}))
       :delete (proc/delete-token st a (when b {:set b}))
-      :rename (proc/rename-token st a b {:update-references? c})
+      :rename (proc/rename-token st a b {:update-references c})
       :sets (proc/set-sets st a)
       :edit (let [sets (:sets st)
                   i (mod a (count sets))]
@@ -544,7 +821,8 @@
                                   ::delete (update-in sets [i 1] dissoc b)
                                   (update-in sets [i 1] assoc b c)))))
     (catch #?(:clj Exception :cljs :default) e
-      (when-not (contains? #{:processor/token-not-found :processor/token-already-exists :processor/token-set-not-found}
+      (when-not (contains? #{:processor/token-not-found :processor/token-already-exists :processor/token-set-not-found
+                             :processor/token-name-collision}
                            (:code (ex-data e)))
         (throw e)))))
 

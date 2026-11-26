@@ -152,10 +152,10 @@
                   changed])          ; #{name} whose `out` entries the last operation touched
 
 (defn- initial-state
-  [sets tokens collisions cfg parsers reader writer]
-  (let [constants (constant-symbols cfg)]
+  [sets tokens collisions {:keys [config parsers reader writer]}]
+  (let [constants (constant-symbols config)]
     (map->State
-     {:config cfg
+     {:config config
       :parsers parsers
       :reader reader
       :writer writer
@@ -843,9 +843,9 @@
     changed (assoc :changed changed)))
 
 (defn- run
-  [sets cfg parsers reader writer]
+  [sets opts]
   (let [[tokens collisions] (split-collisions (merge-sets sets))
-        st (parse-all (initial-state sets tokens collisions cfg parsers reader writer))
+        st (parse-all (initial-state sets tokens collisions opts))
         graph (:graph st)
         st (-> st
                (assoc :reverse (delay (reverse-graph graph)))
@@ -880,10 +880,10 @@
   ([tokens] (build tokens nil))
   ([tokens {:keys [config object-parsers token-reader token-writer]}]
    (run (normalize-sets tokens)
-        (or config (config/make-config))
-        (or object-parsers td/default-object-parsers)
-        (or token-reader td/normalize)
-        token-writer)))
+        {:config (or config (config/make-config))
+         :parsers (or object-parsers td/default-object-parsers)
+         :reader (or token-reader td/normalize)
+         :writer token-writer})))
 
 ;; Incremental operations -----------------------------------------------------
 ;;
@@ -1128,46 +1128,296 @@
          [st changed?] (change st (assoc-in sets [i 1 name] data) [name])]
      (assoc (result st) :dependents (if changed? (dependents-graph st name) {})))))
 
-(defn- rename-references
-  "Sets with the references to `name` in its direct dependents renamed to
-  `new-name`, in the sets they are taken from."
-  [st sets name new-name]
-  (reduce (fn [sets dependent]
-            (let [i (source-index sets dependent)
-                  data (when i (get-in sets [i 1 dependent]))
-                  value (get-in st [:data dependent :value])
-                  ast (get-in st [:parsed dependent :ast])]
-              (if (and data (string? value) ast)
-                (let [value (ast/rename-references value ast {name new-name})]
-                  (assoc-in sets [i 1 dependent] (if (map? data) (assoc data :value value) value)))
-                sets)))
-          sets
-          (get (reverse-index st) name)))
+(defn- renamed-reference
+  "The reference `ref` with the tokens of `renames`, `[[name new-name] ..]`
+  longest name first, renamed: a reference to one of them, or to a field
+  or key of it that is not a token of its own. Nil when `ref` references
+  none of them."
+  [defined? renames ref]
+  (some (fn [[name new-name]]
+          (cond
+            (= ref name) new-name
+
+            (and (str/starts-with? ref name)
+                 (contains? #{\. \[} (get ref (count name)))
+                 (not (defined? ref)))
+            (str new-name (subs ref (count name)))))
+        renames))
+
+(defn- longest-first
+  [renames]
+  (sort-by (comp - count first) renames))
+
+(defn- rewritable-parse
+  "The AST and references of `value` for a rewrite. A value that does not
+  parse is read tolerantly, so its references still follow a rename."
+  [value]
+  (when (str/includes? value "{")
+    (let [entry (cached-parse value)]
+      (if (:error entry)
+        (try
+          (let [{:keys [ast references]} (parser/parse value {:mode :inline :tolerant? true})]
+            {:ast ast :deps references})
+          (catch #?(:clj Throwable :cljs :default) _ nil))
+        entry))))
+
+(defn- rename-in-value
+  "Updates the references in `value` to the tokens of `renames` (see
+  `renamed-reference`), also inside structured values. Nil when `value`
+  has none."
+  [defined? renames value]
+  (letfn [(walk [v]
+            (cond
+              (string? v)
+              (let [{:keys [ast deps]} (rewritable-parse v)
+                    refs (into {} (keep #(some->> (renamed-reference defined? renames %) (vector %))) deps)]
+                (when (seq refs) (ast/rename-references v ast refs)))
+
+              (map? v)
+              (let [m (reduce-kv (fn [m k x] (if-let [x' (walk x)] (assoc m k x') m)) v v)]
+                (when-not (identical? m v) m))
+
+              (sequential? v)
+              (let [xs (mapv walk v)]
+                (when (some some? xs) (mapv #(or %1 %2) xs v)))
+
+              :else nil))]
+    (walk value)))
+
+(defn- references-any?
+  "Whether `value` references one of the tokens of `matches`, `[[name
+  name] ..]` longest first, or a field or key of it."
+  [defined? matches value]
+  (cond
+    (string? value) (boolean (some #(renamed-reference defined? matches %) (:deps (rewritable-parse value))))
+    (map? value) (boolean (some #(references-any? defined? matches %) (vals value)))
+    (sequential? value) (boolean (some #(references-any? defined? matches %) value))
+    :else false))
+
+(defn- scope-definitions
+  "`[set-index set-key token-name data]` of the definitions in `scope`:
+  `:visible` the visible definition of every token, `:all` every
+  definition of every set, a collection of set keys every definition of
+  those sets."
+  [sets scope]
+  (let [in-scope? (case scope
+                    :visible (fn [j _ n] (= j (source-index sets n)))
+                    :all (constantly true)
+                    (if (coll? scope)
+                      (let [in? (set scope)]
+                        (doseq [k in?] (set-index sets k))
+                        (fn [_ k _] (contains? in? k)))
+                      (err/raise :processor/invalid-scope {:data {:scope scope}})))]
+    (for [[j [k tokens]] (map-indexed vector sets)
+          [n data] tokens
+          :when (in-scope? j k n)]
+      [j k n data])))
+
+(defn- reference-rewrites
+  "`{[set-index token-name] value}`: the token values of the definitions
+  in `scope` (see `scope-definitions`) with their references to the tokens
+  of `renames` (`{name new-name}`) renamed. `(value-of set-index
+  token-name data)` is the value of a definition, `defined?` tells the
+  names of the sets."
+  [sets defined? renames scope value-of]
+  (let [renames (longest-first (remove (fn [[n n']] (= n n')) renames))]
+    (if (empty? renames)
+      {}
+      (into {}
+            (keep (fn [[j _ n data]]
+                    (when-let [value (some->> (value-of j n data) (rename-in-value defined? renames))]
+                      [[j n] value])))
+            (scope-definitions sets scope)))))
+
+(defn- state-value
+  "The value of a definition as `st` reads it, for `reference-rewrites`.
+  The visible definitions are read already."
+  [st]
+  (fn [j n data]
+    (let [read (if (= j (source-index (:sets st) n)) (get (:data st) n) ((:reader st) data))]
+      (when-not (err/error-map? read) (:value read)))))
+
+(defn- lookup
+  "What `reference-updates` and `referencing-tokens` read from their
+  arguments: the sets, the names they define and the value of a
+  definition."
+  [tokens {:keys [token-reader token-value]}]
+  (let [sets (normalize-sets tokens)
+        names (merge-sets sets)
+        read (or token-reader td/normalize)]
+    {:sets sets
+     :defined? #(contains? names %)
+     :value-of (if token-value
+                 (fn [_ _ data] (token-value data))
+                 (fn [_ _ data]
+                   (let [r (read data)]
+                     (when-not (err/error-map? r) (:value r)))))}))
+
+(defn reference-updates
+  "The token values of `tokens`, token data or sets of it as `build`
+  takes them, whose references follow the renames in `renames`, `{name
+  new-name}`, by set key and token name: `{[set-key token-name] value}`.
+  Nothing is resolved: the references are the ones each value parses to.
+  All renames are applied at once, so renaming `a` to `b` and `b` to `c`
+  sends the references to `a` to `b`. Options:
+
+    :scope         the definitions looked into: `:visible` (default) the
+                   visible definition of every token, `:all` every
+                   definition of every set, or a collection of set keys
+                   every definition of those sets
+    :token-reader  as for `build`
+    :token-value   the value of token data to rewrite, for callers keeping
+                   their own records (default: the value the reader
+                   returns)
+
+  The names do not have to be tokens of the sets, so references can follow
+  a rename made in the caller's records first. A caller writes the values
+  into its records and passes its sets to `set-sets`."
+  ([tokens renames] (reference-updates tokens renames nil))
+  ([tokens renames opts]
+   (let [{:keys [sets defined? value-of]} (lookup tokens opts)
+         renames (into {} (map (fn [[n n']] [(str/trim n) (str/trim n')])) renames)]
+     (update-keys (reference-rewrites sets defined? renames (or (:scope opts) :visible) value-of)
+                  (fn [[j n]] [(first (nth sets j)) n])))))
+
+(defn referencing-tokens
+  "The definitions of `tokens` whose values reference one of the tokens
+  `names`, or a field or key of it, as `#{[set-key token-name]}`: the ones
+  a rename of these tokens rewrites. Takes the options of
+  `reference-updates`."
+  ([tokens names] (referencing-tokens tokens names nil))
+  ([tokens names opts]
+   (let [{:keys [sets defined? value-of]} (lookup tokens opts)
+         matches (longest-first (map (fn [n] (let [n (str/trim n)] [n n])) names))]
+     (into #{}
+           (keep (fn [[j k n data]]
+                   (when (some->> (value-of j n data) (references-any? defined? matches))
+                     [k n])))
+           (scope-definitions sets (or (:scope opts) :visible))))))
+
+(defn group-renames
+  "The renames, `{name new-name}`, that move the tokens of `names` in the
+  group `group`, a dot path (`\"color.primary\"`), to `new-group`. A token
+  named like the group moves too; a name that only starts like it
+  (`color.primary-dark`) stays."
+  [names group new-group]
+  (let [group (str/trim group)
+        new-group (str/trim new-group)
+        prefix (str group ".")]
+    (into {}
+          (keep (fn [name]
+                  (cond
+                    (= name group) [name new-group]
+                    (str/starts-with? name prefix) [name (str new-group (subs name (count group)))])))
+          names)))
+
+(defn- clean-renames
+  [renames]
+  (into [] (comp (map (fn [[n n']] [(some-> n str/trim) (str/trim n')]))
+                 (remove (fn [[n n']] (= n n'))))
+        renames))
+
+(defn- name-collisions
+  "The errors of the renames `renames`, `[[name new-name] ..]`: a new name
+  in `taken` or given twice, or a new name below or above another of
+  `after`, the names defined once the renames are made."
+  [taken after renames]
+  (let [times (frequencies (map second renames))]
+    (into []
+          (comp (mapcat (fn [[_ new-name]]
+                          [(when (or (contains? taken new-name) (< 1 (get times new-name)))
+                             (err/error-map :processor/token-already-exists {:data {:token-name new-name}}))
+                           (when-let [parent (parent-name after new-name)]
+                             (err/error-map :processor/token-name-collision {:data {:token-name new-name :parent parent}}))
+                           (when-let [below (some #(when (str/starts-with? % (str new-name ".")) %) after)]
+                             (err/error-map :processor/token-name-collision {:data {:token-name below :parent new-name}}))]))
+                (remove nil?)
+                (distinct))
+          renames)))
+
+(defn- set-rename-collisions
+  "`name-collisions` of `renames` made in the set at `i`: a new name is
+  taken when that set keeps it, and collides with the names of every set,
+  so an old name another set still defines keeps counting."
+  [sets i renames]
+  (let [sets (update-in sets [i 1] #(apply dissoc % (map first renames)))]
+    (name-collisions (set (keys (get-in sets [i 1])))
+                     (into (set (keys (merge-sets sets))) (map second) renames)
+                     renames)))
+
+(defn- collision-sets
+  "The sets whose names count for collisions: all of them for `:all`, else
+  those of the set keys of `scope` and of `also`."
+  [sets scope also]
+  (cond
+    (= :all scope) sets
+
+    (coll? scope)
+    (let [in? (into (set also) scope)]
+      (doseq [k scope] (set-index sets k))
+      (filterv (fn [[k]] (contains? in? k)) sets))
+
+    :else (err/raise :processor/invalid-scope {:data {:scope scope}})))
+
+(defn rename-collisions
+  "Why the renames `renames` can not be made in `tokens`, token data or
+  sets of it as `build` takes them: a new name another token keeps
+  (`:processor/token-already-exists`), or one below a token or above other
+  tokens (`:processor/token-name-collision`). Empty when they can. With
+  `:set`, the renames are made in that set: a name is taken only when that
+  set keeps it, while collisions count the other sets too. Without it the
+  sets count as one. `:scope`, `:all` (default) or set keys, limits the
+  sets that count. `renames` is a map or `[name new-name]` pairs; a nil
+  name adds a token, as when copying tokens."
+  ([tokens renames] (rename-collisions tokens renames nil))
+  ([tokens renames opts]
+   (let [set? (contains? opts :set)
+         sets (collision-sets (normalize-sets tokens) (:scope opts :all) (when set? [(:set opts)]))
+         renames (clean-renames renames)]
+     (if set?
+       (set-rename-collisions sets (set-index sets (:set opts)) renames)
+       (let [kept (reduce disj (set (keys (merge-sets sets))) (map first renames))]
+         (name-collisions kept (into kept (map second) renames) renames))))))
 
 (defn rename-token
   "Renames the token `name` to `new-name` in the `:set` of `opts`, by
-  default the set it is taken from. The references to it break unless
-  `:update-references?` rewrites them in its dependents. Returns the
-  build result with `:dependents`."
+  default the set it is taken from. When that definition is the visible
+  one, a definition of `name` it shadowed becomes visible. The references
+  to `name` break unless `:update-references` rewrites them: `:visible` in
+  the visible definitions, `:all` in every definition of every set, or a
+  collection of set keys in every definition of those sets (see Renaming
+  in docs/resolver.md). It refuses what `rename-collisions` reports for
+  its set, so also a name below `name` while another set still defines
+  it. Returns the build result with `:dependents`."
   ([st name new-name] (rename-token st name new-name nil))
-  ([st name new-name {:keys [update-references?] :as opts}]
+  ([st name new-name {:keys [update-references] :as opts}]
    (let [name (str/trim name)
          new-name (str/trim new-name)
          _ (ensure-token st name)
          sets (:sets st)
-         i (target-set sets name opts)
-         data (or (get-in sets [i 1 name])
-                  (err/raise :processor/token-not-found {:data {:token-name name}}))]
+         i (target-set sets name opts)]
+     (when-not (contains? (get-in sets [i 1]) name)
+       (err/raise :processor/token-not-found {:data {:token-name name}}))
      (if (= name new-name)
        (assoc (result (assoc st :changed #{})) :dependents (dependents-graph st name))
        (do
-         (when (defined? st new-name)
-           (err/raise :processor/token-already-exists {:data {:token-name new-name}}))
-         (let [sets (cond-> sets
-                      update-references? (as-> sets (rename-references st sets name new-name))
-                      :always (-> (update-in [i 1] dissoc name)
-                                  (assoc-in [i 1 new-name] data)))
-               names (into [name new-name] (when update-references? (get (reverse-index st) name)))
+         (when-let [e (first (set-rename-collisions sets i [[name new-name]]))]
+           (err/raise (:code e) {:data (:data e)}))
+         (let [rewrites (if (and update-references (= i (source-index sets name)))
+                          (reference-rewrites sets #(defined? st %) {name new-name} update-references (state-value st))
+                          {})
+               sets (reduce-kv (fn [sets [j n] value]
+                                 (when-not (identical? (:reader st) td/normalize)
+                                   (err/raise :processor/token-not-updatable {:data {:token-name n}}))
+                                 (update-in sets [j 1 n] td/assoc-value value))
+                               sets
+                               rewrites)
+               ;; taken after the rewrites: a self-reference is renamed in it
+               data (get-in sets [i 1 name])
+               sets (-> sets
+                        (update-in [i 1] dissoc name)
+                        (assoc-in [i 1 new-name] data))
+               names (into [name new-name] (map second) (keys rewrites))
                [st _] (change st sets names)]
            (assoc (result st) :dependents (dependents-graph st new-name))))))))
 
